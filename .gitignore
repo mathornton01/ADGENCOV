@@ -1,0 +1,37 @@
+# Build
+/build/
+/build-*/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+wheelhouse/
+.venv/
+venv/
+
+# Docs
+docs/_build/
+docs/**/*.aux
+docs/**/*.log
+docs/**/*.out
+docs/**/*.toc
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Data artifacts
+*.tmp
+/data/*.local.*

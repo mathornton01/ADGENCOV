@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use ADGENCOV, please cite it using this metadata."
+title: "ADGENCOV: Algebraic-Diversity Genetic Covariance estimation for transcriptomics"
+abstract: >-
+  A high-performance C++17 toolkit for estimating gene-gene covariance and
+  precision networks from transcriptomic expression matrices using Algebraic
+  Diversity (AD) symmetry-group projections combined with classical shrinkage
+  estimators.
+type: software
+authors:
+  - family-names: Thornton
+    given-names: M.
+  - family-names: Thornton
+license: MIT
+version: 0.1.0
+date-released: 2026-07-04
+repository-code: "https://github.com/USER/adgencov"
+keywords:
+  - bioinformatics
+  - transcriptomics
+  - covariance estimation
+  - precision matrix
+  - gene networks
+  - algebraic diversity
+  - shrinkage
+# doi: 10.5281/zenodo.XXXXXXX   # minted by Zenodo on first tagged release
