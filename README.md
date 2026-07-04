@@ -79,14 +79,40 @@ Every bound function is parity-tested bit-for-bit (~1e-9) against the reference
 prototype (`tests/test_bindings.py`, also run by `ctest` as
 `python_bindings_parity`). See `python/README.md` for details.
 
+## GEO ingestion
+
+`adgencov.geo` pulls a public expression series straight from NCBI GEO by
+accession and runs it through the recommender. The series-matrix parser is
+pure-pandas (no `GEOparse`, no network needed to *parse*), so ingestion is
+fully offline-testable; downloads are cached under `~/.cache/adgencov/geo`.
+
+```python
+from adgencov import geo
+
+result = geo.analyze_series("GSE52778", group="gene_family")   # download + analyze
+print(result.best.spec.method, result.to_dict())
+
+# Or parse a local series matrix (offline) and inspect before analyzing:
+series = geo.read_series_matrix("GSE52778_series_matrix.txt.gz")
+print(series.n_genes, series.n_samples, series.platform)
+result = geo.analyze_series(series, n_genes=500)
+```
+
+Rows keyed by platform probe ids can be mapped to gene symbols with
+`geo.map_probes_to_genes(series, mapping)` before analysis. `GEOparse` is an
+optional extra (`pip install 'adgencov[geo]'`) for richer platform annotation.
+The GEO→recommender path is verified end-to-end in `tests/test_geo.py` (run by
+`ctest` as `geo_ingestion`): on a fixture sharing the CLI golden's genes it
+reproduces the reference recommendation to 1e-9.
+
 ## Roadmap — from library to product
 
 The numerical core (projection, estimators, model selection, clustering) is
 complete and verified. The product layers build on top of it:
 
 - **A. Python bindings** — pybind11 module + parity tests. ✅ *done*
-- **B. GEO ingestion** — pull transcriptomics series by accession (GEOparse) →
-  matrix → pipeline, with local caching.
+- **B. GEO ingestion** — pull transcriptomics series by accession → matrix →
+  pipeline, with local caching. ✅ *done* (`adgencov.geo`)
 - **C. FastAPI backend** — async jobs over upload/accession → JSON
   (recommendations, covariance, edges, blocks); auto OpenAPI docs.
 - **D. Web dashboard** — accession/upload → ranking table, covariance heatmap,

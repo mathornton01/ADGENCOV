@@ -33,4 +33,14 @@ if(ADGENCOV_BUILD_PYTHON)
   set_tests_properties(python_bindings_parity PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
     DEPENDS adgencov_core)
+
+  # GEO ingestion (Phase B) — parses a committed series-matrix fixture and runs
+  # the GEO->recommender path fully offline (no network, no GEOparse needed).
+  # Requires numpy + pandas on the chosen interpreter.
+  add_test(NAME geo_ingestion
+    COMMAND ${Python_EXECUTABLE} -m pytest -q
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_geo.py)
+  set_tests_properties(geo_ingestion PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
+    DEPENDS adgencov_core)
 endif()

@@ -1,0 +1,23 @@
+!Series_title	"ADGENCOV GEO ingestion offline fixture"
+!Series_geo_accession	"GSE999999"
+!Series_summary	"Synthetic tiny series (not real data) used to exercise the GEO"
+!Series_summary	"series-matrix parser and the GEO->recommender path fully offline."
+!Series_platform_id	"GPL0000"
+!Series_sample_id	"GSM0000001 GSM0000002 GSM0000003 GSM0000004 GSM0000005 GSM0000006"
+!Sample_title	"Dex rep1"	"Dex rep2"	"Dex rep3"	"Untreated rep1"	"Untreated rep2"	"Untreated rep3"
+!Sample_geo_accession	"GSM0000001"	"GSM0000002"	"GSM0000003"	"GSM0000004"	"GSM0000005"	"GSM0000006"
+!Sample_characteristics_ch1	"treatment: dexamethasone"	"treatment: dexamethasone"	"treatment: dexamethasone"	"treatment: none"	"treatment: none"	"treatment: none"
+!Sample_platform_id	"GPL0000"	"GPL0000"	"GPL0000"	"GPL0000"	"GPL0000"	"GPL0000"
+!series_matrix_table_begin
+"ID_REF"	"GSM0000001"	"GSM0000002"	"GSM0000003"	"GSM0000004"	"GSM0000005"	"GSM0000006"
+"RPS3"	120.0	110.0	98.0	60.0	55.0	70.0
+"RPL7"	80.0	92.0	85.0	40.0	38.0	47.0
+"COL1A1"	5.0	6.0	4.0	55.0	60.0	48.0
+"HIST1H"	30.0	28.0	33.0	12.0	10.0	15.0
+"KRT8"	12.0	15.0	11.0	40.0	44.0	36.0
+"ACTB"	200.0	210.0	190.0	205.0	215.0	198.0
+"TP53"	9.0	4.0	14.0	3.0	18.0	7.0
+"MIR21"	2.0	3.0	2.5	1.0	1.5	2.0
+"RPS3"	10.0	11.0	9.0	8.0	7.0	12.0
+"GHOST"	0.001	0.0	0.002	0.0	0.001	0.0
+!series_matrix_table_end
