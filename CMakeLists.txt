@@ -22,7 +22,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ---- Dependencies (fetched in a later turn) ------------------------------
 # Eigen3 (header-only linear algebra) — added via FetchContent/find_package.
-# include(cmake/Dependencies.cmake)
+include(cmake/Dependencies.cmake)
 
 # ---- Core library --------------------------------------------------------
 add_library(adgencov)              # sources added in src/CMakeLists.txt
@@ -30,17 +30,17 @@ target_include_directories(adgencov PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 add_library(adgencov::adgencov ALIAS adgencov)
-# add_subdirectory(src)
+add_subdirectory(src)
 
 # ---- CLI -----------------------------------------------------------------
 if(ADGENCOV_BUILD_CLI)
-  # add_subdirectory(cli)
+  # add_subdirectory(cli)  # enabled in a later turn
 endif()
 
 # ---- Tests ---------------------------------------------------------------
 if(ADGENCOV_BUILD_TESTS)
   enable_testing()
-  # add_subdirectory(tests)
+  add_subdirectory(tests)
 endif()
 
 # ---- Python bindings -----------------------------------------------------
