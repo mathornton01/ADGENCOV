@@ -2,9 +2,12 @@
 
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <regex>
 #include <stdexcept>
 #include <unordered_map>
+
+#include "adgencov/clustering.hpp"
 
 namespace adgencov {
 
@@ -54,12 +57,52 @@ std::unordered_map<std::string, std::string> table_map(const Table& t,
   return m;
 }
 
+// Correlation-distance matrix D = 1 - |corr(X, columns)|, matching the
+// prototype: C = np.corrcoef(X, rowvar=False); C = nan_to_num(C, 0); D = 1-|C|.
+// A gene with zero variance yields NaN correlations -> treated as 0 (distance
+// 1), exactly like numpy's nan_to_num.
+Eigen::MatrixXd correlation_distance(const Eigen::MatrixXd& X) {
+  const int p = static_cast<int>(X.cols());
+  // Center each column, then form the (unscaled) covariance via a Gram matrix.
+  Eigen::MatrixXd Xc = X.rowwise() - X.colwise().mean();
+  Eigen::MatrixXd cov = Xc.transpose() * Xc;  // proportional to the covariance
+  Eigen::VectorXd sd(p);
+  for (int i = 0; i < p; ++i) sd(i) = std::sqrt(cov(i, i));
+  Eigen::MatrixXd D(p, p);
+  for (int i = 0; i < p; ++i) {
+    for (int j = 0; j < p; ++j) {
+      double c = 0.0;
+      const double denom = sd(i) * sd(j);
+      if (denom > 0.0) c = cov(i, j) / denom;
+      if (!std::isfinite(c)) c = 0.0;  // nan_to_num
+      D(i, j) = 1.0 - std::abs(c);
+    }
+    D(i, i) = 0.0;  // guard tiny round-off on the diagonal
+  }
+  return D;
+}
+
+// "block_i" labels from average-linkage clustering of the correlation distance.
+std::vector<std::string> correlation_block_labels(const Eigen::MatrixXd& X, int n_blocks) {
+  const int p = static_cast<int>(X.cols());
+  if (n_blocks < 1 || n_blocks > p)
+    throw std::invalid_argument(
+        "adgencov: correlation_blocks needs 1 <= n_blocks <= number of genes.");
+  const Eigen::MatrixXd D = correlation_distance(X);
+  const std::vector<int> codes = agglomerative_average(D, n_blocks);
+  std::vector<std::string> out;
+  out.reserve(codes.size());
+  for (int c : codes) out.push_back("block_" + std::to_string(c));
+  return out;
+}
+
 }  // namespace
 
 std::vector<std::string> build_group_labels(const Dataset& dataset,
                                             const std::string& group,
                                             const Table* annotation,
-                                            const Table* group_map) {
+                                            const Table* group_map,
+                                            int n_blocks) {
   const auto& genes = dataset.genes;
   std::vector<std::string> out;
   out.reserve(genes.size());
@@ -94,9 +137,27 @@ std::vector<std::string> build_group_labels(const Dataset& dataset,
     }
     return out;
   }
-  if (group == "correlation_blocks" || group == "hierarchical_wreath")
-    throw std::invalid_argument("adgencov: group '" + group +
-                                "' (clustering-based) is not yet available in this build.");
+  if (group == "correlation_blocks") {
+    return correlation_block_labels(dataset.X, n_blocks);
+  }
+  if (group == "hierarchical_wreath") {
+    // Public approximation from the prototype: coarse mapped groups, each
+    // subdivided by data-driven correlation blocks ("coarse::block_i").
+    if (!group_map)
+      throw std::invalid_argument(
+          "adgencov: hierarchical_wreath requires --group-map with columns gene,group.");
+    auto m = table_map(*group_map, "group");
+    std::vector<std::string> coarse;
+    coarse.reserve(genes.size());
+    for (const auto& g : genes) {
+      auto it = m.find(g);
+      coarse.push_back(it == m.end() ? "unmapped" : it->second);
+    }
+    const std::vector<std::string> fine = correlation_block_labels(dataset.X, n_blocks);
+    for (size_t i = 0; i < genes.size(); ++i)
+      out.push_back(coarse[i] + "::" + fine[i]);
+    return out;
+  }
   throw std::invalid_argument("adgencov: unknown group: " + group);
 }
 

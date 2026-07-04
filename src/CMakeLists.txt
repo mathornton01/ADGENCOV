@@ -6,6 +6,7 @@ target_sources(adgencov PRIVATE
   adgencov/select.cpp
   adgencov/io.cpp
   adgencov/preprocess.cpp
-  adgencov/groups.cpp)
+  adgencov/groups.cpp
+  adgencov/clustering.cpp)
 
 target_link_libraries(adgencov PUBLIC Eigen3::Eigen)

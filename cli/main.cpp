@@ -29,6 +29,7 @@ struct Args {
   std::string group_map;
   std::string annotation;
   int n_genes = 500;
+  int n_blocks = 4;
   double min_mean = 0.1;
   double top_fraction = 0.01;
   bool log_transform = true;
@@ -46,10 +47,12 @@ void usage(std::ostream& os) {
       "  --sample-regex REGEX    Regex selecting sample columns (default: _LL[0-9]+)\n"
       "  --gene-col NAME         Gene-name column (default: gene_short_name, else col 0)\n"
       "  --group NAME            Symmetry partition: none | gene_family | chromosome |\n"
-      "                          reactome | go_process | custom_group_map\n"
+      "                          reactome | go_process | custom_group_map |\n"
+      "                          correlation_blocks | hierarchical_wreath\n"
       "                          (default: gene_family)\n"
       "  --group-map FILE        TSV/CSV with columns gene,group (for map-based groups)\n"
       "  --annotation FILE       TSV/CSV with columns gene,chromosome\n"
+      "  --n-blocks N            Blocks for correlation_blocks/wreath (default: 4)\n"
       "  --n-genes N             Keep N highest-variance genes (default: 500)\n"
       "  --min-mean X            Drop genes with mean abundance < X (default: 0.1)\n"
       "  --top-fraction X        Fraction of gene pairs to report as edges (default: 0.01)\n"
@@ -75,6 +78,7 @@ bool parse_args(int argc, char** argv, Args& a) {
     else if (k == "--group") a.group = need(i);
     else if (k == "--group-map") a.group_map = need(i);
     else if (k == "--annotation") a.annotation = need(i);
+    else if (k == "--n-blocks") a.n_blocks = std::stoi(need(i));
     else if (k == "--n-genes") a.n_genes = std::stoi(need(i));
     else if (k == "--min-mean") a.min_mean = std::stod(need(i));
     else if (k == "--top-fraction") a.top_fraction = std::stod(need(i));
@@ -158,7 +162,7 @@ int main(int argc, char** argv) {
     if (!args.annotation.empty()) { ann = adgencov::read_table(args.annotation); ann_p = &ann; }
     if (!args.group_map.empty()) { gmap = adgencov::read_table(args.group_map); gmap_p = &gmap; }
     std::vector<std::string> label_names =
-        adgencov::build_group_labels(ds, args.group, ann_p, gmap_p);
+        adgencov::build_group_labels(ds, args.group, ann_p, gmap_p, args.n_blocks);
     std::vector<int> labels = adgencov::factorize(label_names);
 
     // --- Ensure output directory (portable, no <filesystem> dependency) ---

@@ -5,7 +5,8 @@ add_executable(adgencov_tests
   test_shrink.cpp
   test_select.cpp
   test_io.cpp
-  test_pipeline.cpp)
+  test_pipeline.cpp
+  test_clustering.cpp)
 
 # golden_*.hpp headers are generated next to the test sources; the tests also
 # read fixtures under this directory, so expose its path.

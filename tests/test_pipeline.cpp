@@ -69,7 +69,7 @@ TEST_CASE("build_group_labels errors when required tables are missing", "[groups
   Dataset ds = load_fixture();
   REQUIRE_THROWS(build_group_labels(ds, "chromosome"));
   REQUIRE_THROWS(build_group_labels(ds, "custom_group_map"));
-  REQUIRE_THROWS(build_group_labels(ds, "correlation_blocks"));  // deferred
+  REQUIRE_THROWS(build_group_labels(ds, "hierarchical_wreath"));  // needs group map
   REQUIRE_THROWS(build_group_labels(ds, "nonsense"));
 }
 
