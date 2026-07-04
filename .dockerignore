@@ -41,3 +41,6 @@ docs/_build/
 data/*.local.*
 tests/_tmp_*
 bench_speed.py
+
+# Never ship secrets into the image
+.env
