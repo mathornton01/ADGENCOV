@@ -38,3 +38,6 @@ docs/**/*.toc
 
 # Golden-value generation virtualenv
 .goldenv/
+
+# Test scratch files
+tests/_tmp_*

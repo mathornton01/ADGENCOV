@@ -1,0 +1,120 @@
+#include "adgencov/groups.hpp"
+
+#include <array>
+#include <cctype>
+#include <regex>
+#include <stdexcept>
+#include <unordered_map>
+
+namespace adgencov {
+
+std::string gene_family_label(const std::string& gene) {
+  std::string g = gene;
+  for (char& c : g) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  static const std::array<const char*, 15> prefixes = {
+      "MIR", "SNORD", "SNORA", "COL", "ABCA", "ABCB", "ABCC", "ACAD",
+      "RPS", "RPL", "HIST", "KRT", "IGF", "HLA"};
+  for (const char* p : prefixes) {
+    if (!p) continue;
+    const std::string pref(p);
+    if (g.size() >= pref.size() && g.compare(0, pref.size(), pref) == 0) return pref;
+  }
+  // Leading alphabetic run, truncated to 4 characters.
+  std::string alpha;
+  for (char c : g) {
+    if (std::isalpha(static_cast<unsigned char>(c))) alpha.push_back(c);
+    else break;
+  }
+  if (alpha.empty()) return "OTHER";
+  return alpha.substr(0, 4);
+}
+
+namespace {
+
+// Build gene->value map from a table with a "gene" column and one target
+// column, matching prototype behaviour (lowercased headers, first wins).
+std::unordered_map<std::string, std::string> table_map(const Table& t,
+                                                       const std::string& target) {
+  int gcol = -1, tcol = -1;
+  for (int c = 0; c < t.ncol(); ++c) {
+    std::string h = t.headers[c];
+    for (char& ch : h) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (h == "gene") gcol = c;
+    else if (h == target) tcol = c;
+  }
+  if (gcol < 0 || tcol < 0)
+    throw std::invalid_argument("adgencov: table must contain columns gene and " + target + ".");
+  std::unordered_map<std::string, std::string> m;
+  for (const auto& r : t.rows) {
+    const std::string& g = r[gcol];
+    const std::string& v = r[tcol];
+    if (g.empty() || v.empty()) continue;  // dropna
+    m.emplace(g, v);                        // first occurrence wins
+  }
+  return m;
+}
+
+}  // namespace
+
+std::vector<std::string> build_group_labels(const Dataset& dataset,
+                                            const std::string& group,
+                                            const Table* annotation,
+                                            const Table* group_map) {
+  const auto& genes = dataset.genes;
+  std::vector<std::string> out;
+  out.reserve(genes.size());
+
+  if (group == "none") {
+    for (size_t i = 0; i < genes.size(); ++i) out.push_back("gene_" + std::to_string(i));
+    return out;
+  }
+  if (group == "gene_family") {
+    for (const auto& g : genes) out.push_back(gene_family_label(g));
+    return out;
+  }
+  if (group == "reactome" || group == "go_process" || group == "custom_group_map") {
+    if (!group_map)
+      throw std::invalid_argument("adgencov: group '" + group +
+                                  "' requires --group-map with columns gene,group.");
+    auto m = table_map(*group_map, "group");
+    for (const auto& g : genes) {
+      auto it = m.find(g);
+      out.push_back(it == m.end() ? "unmapped" : it->second);
+    }
+    return out;
+  }
+  if (group == "chromosome") {
+    if (!annotation)
+      throw std::invalid_argument("adgencov: chromosome grouping requires --annotation "
+                                  "with columns gene,chromosome.");
+    auto m = table_map(*annotation, "chromosome");
+    for (const auto& g : genes) {
+      auto it = m.find(g);
+      out.push_back(it == m.end() ? "chr_unknown" : it->second);
+    }
+    return out;
+  }
+  if (group == "correlation_blocks" || group == "hierarchical_wreath")
+    throw std::invalid_argument("adgencov: group '" + group +
+                                "' (clustering-based) is not yet available in this build.");
+  throw std::invalid_argument("adgencov: unknown group: " + group);
+}
+
+std::vector<int> factorize(const std::vector<std::string>& labels) {
+  std::unordered_map<std::string, int> code;
+  std::vector<int> out;
+  out.reserve(labels.size());
+  for (const auto& l : labels) {
+    auto it = code.find(l);
+    if (it == code.end()) {
+      int next = static_cast<int>(code.size());
+      code.emplace(l, next);
+      out.push_back(next);
+    } else {
+      out.push_back(it->second);
+    }
+  }
+  return out;
+}
+
+}  // namespace adgencov

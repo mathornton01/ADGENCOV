@@ -34,7 +34,7 @@ add_subdirectory(src)
 
 # ---- CLI -----------------------------------------------------------------
 if(ADGENCOV_BUILD_CLI)
-  # add_subdirectory(cli)  # enabled in a later turn
+  add_subdirectory(cli)
 endif()
 
 # ---- Tests ---------------------------------------------------------------
