@@ -87,11 +87,20 @@ Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
 double gaussian_nll_one(const Eigen::VectorXd& x, const Eigen::VectorXd& mu,
                         const Eigen::MatrixXd& Sigma) {
   const Eigen::Index p = x.size();
-  // Match the prototype: project onto SPD before evaluating the likelihood.
-  const Eigen::MatrixXd Spd = make_pd(Sigma);
-  const Eigen::LLT<Eigen::MatrixXd> llt(Spd);
+  // Every Sigma reaching this function has already been make_pd'd by the
+  // estimator dispatch (dispatch_linear / estimate_covariance both return an
+  // SPD, eigenvalue-floored matrix), so the Cholesky succeeds on it directly in
+  // the overwhelmingly common case.  Attempt LLT first and only fall back to the
+  // expensive O(p^3) SPD eigen-projection when the raw matrix is not numerically
+  // positive-definite.  This preserves the prototype's make_pd semantics (any
+  // genuinely indefinite input is still projected) while removing a redundant
+  // full eigendecomposition from every single leave-one-out fold.
+  Eigen::LLT<Eigen::MatrixXd> llt(Sigma);
   if (llt.info() != Eigen::Success) {
-    return std::numeric_limits<double>::infinity();
+    llt.compute(make_pd(Sigma));
+    if (llt.info() != Eigen::Success) {
+      return std::numeric_limits<double>::infinity();
+    }
   }
   // logdet(Sigma) = 2 * sum(log(diag(L))) with Sigma = L L^T.
   const Eigen::MatrixXd& L = llt.matrixL();

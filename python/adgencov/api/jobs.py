@@ -52,6 +52,9 @@ class JobRecord:
     created_at: float = field(default_factory=time.time)
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
+    # Live progress for the status bar: fraction in [0, 1] and a human phase.
+    progress: float = 0.0
+    phase: Optional[str] = None
 
     def summary(self) -> Dict[str, Any]:
         return {
@@ -63,6 +66,8 @@ class JobRecord:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "error": self.error,
+            "progress": self.progress,
+            "phase": self.phase,
         }
 
     def detail(self) -> Dict[str, Any]:
@@ -87,16 +92,21 @@ class JobStore:
     def submit(
         self,
         kind: JobKind,
-        fn: Callable[[], Dict[str, Any]],
+        fn: Callable[[Callable[[float, str], None]], Dict[str, Any]],
         *,
         label: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> JobRecord:
         """Register a job and schedule *fn* to run on the pool.
 
-        *fn* takes no arguments and returns the JSON-serializable analysis dict
-        (typically ``AnalysisResult.to_dict()``).  Any exception it raises is
-        captured and surfaced as ``state=failed`` with the message in ``error``.
+        *fn* takes a single ``progress`` callback — ``progress(fraction, phase)``
+        with ``fraction`` in ``[0, 1]`` and a short human-readable ``phase`` — and
+        returns the JSON-serializable analysis dict (typically
+        ``AnalysisResult.to_dict()``).  Calling the callback updates the live
+        job state that clients poll for a status bar; passing it is optional (a
+        job that never calls it simply reports 0 until it finishes).  Any
+        exception *fn* raises is captured and surfaced as ``state=failed`` with
+        the message in ``error``.
         """
         job = JobRecord(id=uuid.uuid4().hex, kind=kind, label=label, params=params or {})
         with self._lock:
@@ -105,15 +115,33 @@ class JobStore:
             self._futures[job.id] = fut
         return job
 
-    def _run(self, job_id: str, fn: Callable[[], Dict[str, Any]]) -> None:
+    def _set_progress(self, job_id: str, fraction: float, phase: str) -> None:
+        """Record live progress for *job_id* (thread-safe; ignored if gone)."""
+        frac = 0.0 if fraction < 0.0 else 1.0 if fraction > 1.0 else float(fraction)
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.progress = frac
+            job.phase = phase
+
+    def _run(
+        self,
+        job_id: str,
+        fn: Callable[[Callable[[float, str], None]], Dict[str, Any]],
+    ) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:  # removed before it started
                 return
             job.state = JobState.RUNNING
             job.started_at = time.time()
+
+        def progress(fraction: float, phase: str) -> None:
+            self._set_progress(job_id, fraction, phase)
+
         try:
-            result = fn()
+            result = fn(progress)
             with self._lock:
                 job = self._jobs.get(job_id)
                 if job is None:
@@ -121,6 +149,8 @@ class JobStore:
                 job.result = result
                 job.state = JobState.SUCCEEDED
                 job.finished_at = time.time()
+                job.progress = 1.0
+                job.phase = "Complete"
         except Exception as exc:  # noqa: BLE001 - report any failure to the client
             with self._lock:
                 job = self._jobs.get(job_id)

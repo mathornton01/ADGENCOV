@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ADGENCOV — Genetic Covariance Explorer</title>
+  <meta name="description" content="Algebraic-Diversity Genetic Covariance estimation for transcriptomics: upload a matrix or point at a GEO accession and explore the recommended covariance structure." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">&#129516;</span>
+      <div>
+        <h1>ADGENCOV</h1>
+        <p class="tagline">Algebraic-Diversity Genetic Covariance &mdash; transcriptomics explorer</p>
+      </div>
+    </div>
+    <a class="api-link" href="/docs" target="_blank" rel="noopener">API&nbsp;docs</a>
+  </header>
+
+  <main>
+    <!-- ---------------- input panel ---------------- -->
+    <section class="panel" id="input-panel" aria-label="Analysis input">
+      <div class="source-tabs" role="tablist">
+        <button type="button" class="tab active" data-source="geo" role="tab" aria-selected="true">GEO accession</button>
+        <button type="button" class="tab" data-source="upload" role="tab" aria-selected="false">Upload matrix</button>
+      </div>
+
+      <form id="analyze-form">
+        <div class="source-fields" id="fields-geo">
+          <label>GEO accession
+            <input type="text" id="accession" name="accession" placeholder="GSE52778" autocomplete="off" />
+          </label>
+          <label class="checkbox"><input type="checkbox" id="force" /> bypass download cache</label>
+        </div>
+
+        <div class="source-fields hidden" id="fields-upload">
+          <label>Expression matrix (TSV / CSV)
+            <input type="file" id="file" name="file" accept=".tsv,.csv,.txt" />
+          </label>
+          <label>Gene id column
+            <input type="text" id="gene_col" value="gene_short_name" />
+          </label>
+          <label>Sample column regex
+            <input type="text" id="sample_regex" value=".*" />
+          </label>
+        </div>
+
+        <fieldset class="params">
+          <legend>Parameters</legend>
+          <label>Top genes
+            <input type="number" id="n_genes" value="150" min="2" step="1" />
+            <small class="hint">Recommender cost grows ~cubically: 150 ≈ 1&ndash;2 min, 500 ≈ 40+ min.</small>
+          </label>
+          <label>Min mean expr
+            <input type="number" id="min_mean" value="0.1" min="0" step="0.05" />
+          </label>
+          <label>Grouping
+            <select id="group">
+              <option value="gene_family">gene_family</option>
+              <option value="chromosome">chromosome</option>
+              <option value="reactome">reactome</option>
+              <option value="go_process">go_process</option>
+              <option value="correlation_blocks">correlation_blocks</option>
+              <option value="hierarchical_wreath">hierarchical_wreath</option>
+              <option value="custom">custom</option>
+            </select>
+          </label>
+          <label>Blocks
+            <input type="number" id="n_blocks" value="4" min="1" step="1" />
+          </label>
+          <label>Edge fraction
+            <input type="number" id="top_fraction" value="0.01" min="0.0001" max="1" step="any" />
+          </label>
+          <label class="checkbox"><input type="checkbox" id="log_transform" checked /> log2(x+1)</label>
+          <label class="checkbox"><input type="checkbox" id="fast_cv" checked /> fast mode (10-fold CV)</label>
+        </fieldset>
+
+        <button type="submit" id="run-btn" class="run">Run analysis</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+        <div class="progress hidden" id="progress-wrap" aria-hidden="true">
+          <div class="progress-track">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="progress-phase">Starting…</span>
+            <span id="progress-pct">0%</span>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- ---------------- results ---------------- -->
+    <section id="results" class="results hidden" aria-label="Results">
+      <div class="panel recommendation" id="recommendation"></div>
+
+      <div class="grid">
+        <div class="panel">
+          <h2>Estimator ranking</h2>
+          <div class="scroll"><table id="ranking-table"><thead><tr>
+            <th>#</th><th>Method</th><th>Params</th><th>LOO&nbsp;NLL</th><th>Cond.&nbsp;#</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+
+        <div class="panel">
+          <h2>Gene blocks <span class="hint" id="block-count"></span></h2>
+          <div class="scroll blocks" id="blocks"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Covariance heatmap <span class="hint">ordered by block</span></h2>
+          <canvas id="heatmap" width="440" height="440"></canvas>
+          <div class="legend" id="heatmap-legend"></div>
+          <p class="hint" id="heatmap-note"></p>
+        </div>
+
+        <div class="panel">
+          <h2>Covariance network <span class="hint" id="edge-count"></span></h2>
+          <svg id="network" viewBox="0 0 440 440" role="img" aria-label="Gene covariance network"></svg>
+          <div class="tooltip hidden" id="net-tooltip"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>ADGENCOV &middot; served by the FastAPI core</span>
+    <span id="version"></span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

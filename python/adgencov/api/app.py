@@ -16,10 +16,16 @@ job, and return ``202 Accepted`` with a :class:`JobSummary`.  Clients poll
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+# The single-page dashboard (Phase D) ships as static files next to this
+# package; the API serves it directly so the whole product is one deployable.
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 from .. import __version__
 from .jobs import JobKind, JobStore
@@ -98,7 +104,7 @@ def create_app(
     async def analyze_upload(
         store: JobStore = Depends(get_store),
         file: UploadFile = File(..., description="Expression matrix (TSV/CSV)."),
-        n_genes: int = Form(500),
+        n_genes: int = Form(150),
         min_mean: float = Form(0.1),
         log_transform: bool = Form(True),
         group: str = Form("gene_family"),
@@ -130,7 +136,7 @@ def create_app(
         label = file.filename or "upload"
         job = store.submit(
             JobKind.UPLOAD,
-            lambda: run_upload_analysis(raw, params),
+            lambda progress: run_upload_analysis(raw, params, progress=progress),
             label=label,
             params=params.model_dump(),
         )
@@ -149,7 +155,7 @@ def create_app(
     ) -> JobSummary:
         job = store.submit(
             JobKind.GEO,
-            lambda: run_geo_analysis(req),
+            lambda progress: run_geo_analysis(req, progress=progress),
             label=req.accession,
             params=req.model_dump(),
         )
@@ -171,5 +177,12 @@ def create_app(
     def delete_job(job_id: str, store: JobStore = Depends(get_store)) -> None:
         if not store.remove(job_id):
             raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+
+    # -- dashboard (static SPA) --------------------------------------------
+    # Mounted LAST so every explicit API route above (and FastAPI's own
+    # /docs, /openapi.json) takes precedence; the mount then serves index.html
+    # at "/" and the JS/CSS assets.  html=True makes "/" resolve to index.html.
+    if os.path.isdir(STATIC_DIR):
+        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="dashboard")
 
     return app

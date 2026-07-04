@@ -529,6 +529,8 @@ def analyze_series(
     top_fraction: float = 0.01,
     cache_dir: Optional[str] = None,
     force: bool = False,
+    progress: Optional[Any] = None,
+    cv_folds: Optional[int] = None,
 ) -> AnalysisResult:
     """Run the full recommender on a GEO series — pull → preprocess → analyze.
 
@@ -543,6 +545,12 @@ def analyze_series(
     AnalysisResult
         JSON-serializable via :meth:`AnalysisResult.to_dict`.
     """
+    def report(fraction: float, phase: str) -> None:
+        if progress is not None:
+            progress(fraction, phase)
+
+    acc_label = str(source) if _looks_like_accession(source) else "series"
+    report(0.02, f"Fetching {acc_label} from GEO")
     series = load_series(source, cache_dir=cache_dir, force=force)
     if series.n_samples < 3:
         raise GeoError(
@@ -552,6 +560,7 @@ def analyze_series(
     regex = series.sample_regex()
 
     # Materialize the TSV and drive the C++ loader so numbers match the CLI.
+    report(0.10, f"Preprocessing {series.n_genes} genes → top {n_genes}")
     with tempfile.TemporaryDirectory(prefix="adgencov_geo_") as td:
         tsv = os.path.join(td, f"{series.accession}.tsv")
         series.write_tsv(tsv, gene_col="gene_short_name")
@@ -560,8 +569,22 @@ def analyze_series(
             data, n_genes=n_genes, min_mean=min_mean, log_transform=log_transform
         )
 
+    report(0.18, "Building gene blocks")
     labels = build_group_labels(dataset, group, n_blocks=n_blocks)
     codes = factorize(labels)
     X = np.asarray(dataset.X, dtype=float)
-    result = analyze(X, codes, genes=list(dataset.genes), top_fraction=top_fraction)
+
+    # The estimator grid is the long pole; give it the [0.20, 0.98] band so the
+    # bar keeps moving through leave-one-out scoring on many-sample series.
+    def scaled(fraction: float, phase: str) -> None:
+        report(0.20 + 0.78 * fraction, phase)
+
+    result = analyze(
+        X,
+        codes,
+        genes=list(dataset.genes),
+        top_fraction=top_fraction,
+        progress=scaled,
+        cv_folds=cv_folds,
+    )
     return result

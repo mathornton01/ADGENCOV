@@ -20,7 +20,7 @@ class AnalyzeParams(BaseModel):
     the API, GUI, and command line all expose the same controls.
     """
 
-    n_genes: int = Field(500, ge=2, description="Top-variance genes to keep.")
+    n_genes: int = Field(150, ge=2, description="Top-variance genes to keep.")
     min_mean: float = Field(0.1, ge=0.0, description="Drop genes below this mean expression.")
     log_transform: bool = Field(True, description="Apply log2(x+1) before standardizing.")
     group: str = Field(
@@ -33,6 +33,17 @@ class AnalyzeParams(BaseModel):
     n_blocks: int = Field(4, ge=1, description="Number of blocks for correlation_blocks / wreath.")
     top_fraction: float = Field(
         0.01, gt=0.0, le=1.0, description="Fraction of gene pairs kept as network edges."
+    )
+    cv_folds: Optional[int] = Field(
+        None,
+        ge=2,
+        description=(
+            "Estimator-scoring cross-validation. When null (default) uses exact "
+            "leave-one-out CV. When set to an integer k, uses k-fold CV instead — "
+            "n/k times fewer fits, so much faster on large sample counts, at a "
+            "slight cost in selection precision (the recommended estimator is "
+            "usually unchanged). Typical fast value: 10."
+        ),
     )
 
 
@@ -71,6 +82,12 @@ class JobSummary(BaseModel):
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     error: Optional[str] = None
+    progress: float = Field(
+        0.0, ge=0.0, le=1.0, description="Fraction complete in [0, 1] for the status bar."
+    )
+    phase: Optional[str] = Field(
+        None, description="Short human-readable label for the current stage."
+    )
 
 
 class JobDetail(JobSummary):

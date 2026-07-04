@@ -53,4 +53,14 @@ if(ADGENCOV_BUILD_PYTHON)
   set_tests_properties(api_service PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
     DEPENDS adgencov_core)
+
+  # Web dashboard (Phase D) — serves the static SPA over the ASGI app and
+  # verifies the client/API contract (DOM hooks, endpoints) plus the new
+  # covariance payload the heatmap consumes. Fully offline via TestClient.
+  add_test(NAME dashboard_service
+    COMMAND ${Python_EXECUTABLE} -m pytest -q
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_dashboard.py)
+  set_tests_properties(dashboard_service PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
+    DEPENDS adgencov_core)
 endif()

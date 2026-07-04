@@ -117,6 +117,7 @@ Returns
         py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
                           const EstimatorSpec&>(&estimate_covariance),
         py::arg("X"), py::arg("labels"), py::arg("spec"),
+        py::call_guard<py::gil_scoped_release>(),
         "Dispatch to the named estimator; AD variants project first; result "
         "is always make_pd'd.");
   // ...and a convenience overload taking (method, params) directly.
@@ -128,6 +129,7 @@ Returns
       },
       py::arg("X"), py::arg("labels"), py::arg("method"),
       py::arg("params") = std::map<std::string, double>{},
+      py::call_guard<py::gil_scoped_release>(),
       "Convenience form: estimate_covariance(X, labels, method, params_dict).");
 
   m.def("gaussian_nll_one", &gaussian_nll_one, py::arg("x"), py::arg("mu"),
@@ -138,6 +140,7 @@ Returns
         py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
                           const EstimatorSpec&>(&loo_nll),
         py::arg("X"), py::arg("labels"), py::arg("spec"),
+        py::call_guard<py::gil_scoped_release>(),
         "Leave-one-out CV mean NLL (rank-1 downdate fast path for covariance-only "
         "methods).");
   m.def(
@@ -148,12 +151,14 @@ Returns
       },
       py::arg("X"), py::arg("labels"), py::arg("method"),
       py::arg("params") = std::map<std::string, double>{},
+      py::call_guard<py::gil_scoped_release>(),
       "Convenience form: loo_nll(X, labels, method, params_dict).");
 
   m.def("candidate_grid", &candidate_grid, py::arg("p"), py::arg("n"),
         "The conservative candidate grid for a (p genes, n samples) problem.");
   m.def("recommend_estimator", &recommend_estimator, py::arg("X"),
         py::arg("labels"),
+        py::call_guard<py::gil_scoped_release>(),
         "Score the candidate grid and return results sorted by ascending LOO-NLL.");
 
   // ---- clustering.hpp ----------------------------------------------------
@@ -180,6 +185,7 @@ Returns
         "Read a delimited text file, sniffing the delimiter from the header.");
   m.def("load_expression_matrix", &load_expression_matrix, py::arg("path"),
         py::arg("sample_regex"), py::arg("gene_col") = "gene_short_name",
+        py::call_guard<py::gil_scoped_release>(),
         "Load an expression/count matrix; sample columns match sample_regex.");
   m.def("write_matrix_csv", &write_matrix_csv, py::arg("path"), py::arg("M"),
         py::arg("row_names") = std::vector<std::string>{},
@@ -194,6 +200,7 @@ Returns
 
   m.def("preprocess", &preprocess, py::arg("data"), py::arg("n_genes") = 500,
         py::arg("min_mean") = 0.1, py::arg("log_transform") = true,
+        py::call_guard<py::gil_scoped_release>(),
         "Preprocess a genes-by-samples ExpressionData into a standardized "
         "samples-by-genes Dataset.");
 

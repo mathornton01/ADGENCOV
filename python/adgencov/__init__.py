@@ -22,8 +22,11 @@ Example
 """
 from __future__ import annotations
 
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -92,6 +95,13 @@ __all__ = [
 ]
 
 
+# The recommended estimator's full covariance matrix is shipped in the JSON
+# payload so the dashboard/GUI can draw a heatmap.  A p-by-p matrix is
+# O(p^2) numbers; above this dimension we omit it (the network/edge view still
+# works) to keep the payload from ballooning past a few megabytes.
+COVARIANCE_PAYLOAD_MAX_DIM = 600
+
+
 @dataclass(frozen=True)
 class Edge:
     """One covariance edge between two genes (top-fraction network)."""
@@ -149,11 +159,22 @@ class AnalysisResult:
         return np.asarray(self.best.covariance)
 
     def to_dict(self) -> Dict[str, Any]:
-        """A JSON-serializable summary (for FastAPI responses)."""
+        """A JSON-serializable summary (for FastAPI responses).
+
+        Includes the recommended estimator's full covariance matrix (for the
+        heatmap) when the gene count is small enough — see
+        :data:`COVARIANCE_PAYLOAD_MAX_DIM`; otherwise ``covariance`` is ``None``
+        and consumers fall back to the edge/network view.
+        """
+        p = len(self.genes)
+        cov = np.asarray(self.best.covariance, dtype=float)
+        covariance = cov.tolist() if p <= COVARIANCE_PAYLOAD_MAX_DIM else None
         return {
             "genes": self.genes,
             "labels": self.labels,
+            "n_genes": p,
             "recommended": self.best.spec.method,
+            "covariance": covariance,
             "ranking": [
                 {
                     "method": r.spec.method,
@@ -175,16 +196,167 @@ class AnalysisResult:
         }
 
 
+@dataclass(frozen=True)
+class _RankedEstimator:
+    """A single scored candidate — the Python-loop analogue of the C++
+    ``EstimatorResult``, exposing the same attributes :meth:`to_dict` reads.
+
+    Built so :func:`analyze` can iterate the candidate grid one estimator at a
+    time (reporting progress after each) while staying numerically identical to
+    the C++ ``recommend_estimator``: it calls the very same ``loo_nll`` /
+    ``estimate_covariance`` primitives and reproduces the condition-number and
+    stable-sort logic verbatim.
+    """
+
+    spec: Any
+    covariance: np.ndarray
+    loo_nll: float
+    condition_number: float
+
+
+def _kfold_nll(
+    X: np.ndarray, labels: List[int], spec: Any, k: int
+) -> float:
+    """k-fold cross-validated mean Gaussian NLL for one candidate.
+
+    A faster alternative to the exact leave-one-out :func:`loo_nll`: instead of
+    ``n`` refits it does ``k`` (contiguous, no-shuffle folds, matching
+    ``sklearn.model_selection.KFold(shuffle=False)``).  Each held-out sample is
+    scored exactly once under the Gaussian fit on its training fold, and the
+    mean over all ``n`` samples is returned — same scale as ``loo_nll`` so the
+    two are directly comparable, but ``n/k`` times fewer covariance estimations.
+
+    Uses the same C++ primitives (:func:`estimate_covariance`,
+    :func:`gaussian_nll_one`), both GIL-released, so it parallelizes identically.
+    """
+    n = X.shape[0]
+    k = max(2, min(int(k), n))
+    # Contiguous folds via array_split (handles n % k != 0 like sklearn KFold).
+    fold_idx = np.array_split(np.arange(n), k)
+    total = 0.0
+    for te in fold_idx:
+        if te.size == 0:
+            continue
+        mask = np.ones(n, dtype=bool)
+        mask[te] = False
+        Xtr = X[mask]
+        if Xtr.shape[0] < 3:  # need >=3 rows for an unbiased training covariance
+            raise ValueError("k-fold: training fold too small")
+        mu = Xtr.mean(axis=0)
+        Sigma = estimate_covariance(Xtr, labels, spec)
+        for i in te:
+            total += gaussian_nll_one(X[i], mu, Sigma)
+    return total / n
+
+
+def _score_one(
+    X: np.ndarray,
+    labels: List[int],
+    spec: Any,
+    cv_folds: Optional[int] = None,
+) -> Optional[_RankedEstimator]:
+    """Score a single candidate; return ``None`` if it fails to estimate.
+
+    The heavy calls (:func:`loo_nll` / :func:`_kfold_nll`,
+    :func:`estimate_covariance`) run in the C++ core with the GIL released, so
+    calling this from a thread pool yields genuine multi-core parallelism.  With
+    ``cv_folds`` set, scoring uses k-fold CV instead of exact leave-one-out.
+    """
+    try:
+        score = (
+            _kfold_nll(X, labels, spec, cv_folds)
+            if cv_folds is not None
+            else loo_nll(X, labels, spec)
+        )
+        Sigma = np.asarray(estimate_covariance(X, labels, spec), dtype=float)
+        # 2-norm condition number of an SPD matrix = |lambda|_max / |lambda|_min.
+        ev = np.abs(np.linalg.eigvalsh(Sigma))
+        lo = float(ev.min())
+        cond = (float(ev.max()) / lo) if lo > 0.0 else float("inf")
+        return _RankedEstimator(spec, Sigma, float(score), cond)
+    except Exception:  # noqa: BLE001 - skip candidates that fail to estimate
+        return None
+
+
+# Cap the recommender's worker pool.  Scoring is CPU-bound in released-GIL C++,
+# so more workers than cores just adds memory pressure (each fold allocates
+# p-by-p temporaries).  Override with ADGENCOV_MAX_WORKERS for tuning.
+def _max_workers(n_tasks: int) -> int:
+    env = os.environ.get("ADGENCOV_MAX_WORKERS")
+    if env:
+        try:
+            cap = int(env)
+            if cap > 0:
+                return min(n_tasks, cap)
+        except ValueError:
+            pass
+    return max(1, min(n_tasks, os.cpu_count() or 1))
+
+
+def _rank_estimators(
+    X: np.ndarray,
+    labels: List[int],
+    progress: Optional[Callable[[float, str], None]] = None,
+    cv_folds: Optional[int] = None,
+) -> List[_RankedEstimator]:
+    """Score the candidate grid, ascending by CV NLL, reporting per-candidate
+    progress.  With ``cv_folds=None`` (default) this is numerically identical to
+    ``adgencov::recommend_estimator`` — same primitives, same stable sort — but
+    scores the grid concurrently across cores (the C++ calls release the GIL)
+    and reports progress as each candidate finishes.  With ``cv_folds=k`` it
+    scores by k-fold CV instead of exact leave-one-out (faster; scores shift)."""
+    grid = candidate_grid(X.shape[1], X.shape[0])
+    total = len(grid)
+    # Slot results by grid index so ties keep candidate-grid order under the
+    # stable sort below, exactly as the sequential C++ path does.
+    scored: List[Optional[_RankedEstimator]] = [None] * total
+
+    done = 0
+    lock = threading.Lock()
+    if progress is not None:
+        progress(0.0, f"Scoring {total} estimators")
+
+    with ThreadPoolExecutor(max_workers=_max_workers(total)) as pool:
+        futures = {
+            pool.submit(_score_one, X, labels, spec, cv_folds): i
+            for i, spec in enumerate(grid)
+        }
+        for fut, idx in _as_completed_pairs(futures):
+            scored[idx] = fut.result()
+            if progress is not None:
+                with lock:
+                    done += 1
+                    progress(done / total, f"Scored {done}/{total} estimators")
+    if progress is not None:
+        progress(1.0, "Extracting covariance network")
+
+    results = [r for r in scored if r is not None]
+    # Stable ascending sort by LOO-NLL (Python's sort is stable), matching the
+    # C++ std::stable_sort so ties keep candidate-grid order.
+    results.sort(key=lambda r: r.loo_nll)
+    return results
+
+
+def _as_completed_pairs(futures: Dict[Any, int]):
+    """Yield ``(future, index)`` as each future completes."""
+    from concurrent.futures import as_completed
+
+    for fut in as_completed(futures):
+        yield fut, futures[fut]
+
+
 def analyze(
     X: np.ndarray,
     labels: Sequence[int],
     genes: Optional[Sequence[str]] = None,
     top_fraction: float = 0.01,
+    progress: Optional[Callable[[float, str], None]] = None,
+    cv_folds: Optional[int] = None,
 ) -> AnalysisResult:
     """Run the recommender end-to-end on a standardized samples-by-genes matrix.
 
     This is the one call the backend makes after preprocessing/grouping: it
-    ranks the estimator grid by leave-one-out NLL and extracts the top
+    ranks the estimator grid by cross-validated NLL and extracts the top
     covariance edges from the winner.
 
     Parameters
@@ -197,6 +369,16 @@ def analyze(
         Gene names for edge labels; defaults to ``gene_0 ... gene_{p-1}``.
     top_fraction : float
         Fraction of gene pairs to keep as edges.
+    progress : callable, optional
+        ``progress(fraction, phase)`` invoked after each candidate is scored so
+        a UI can show a live status bar.  When ``None``, scoring is unobserved.
+    cv_folds : int, optional
+        When ``None`` (default) candidates are scored by exact leave-one-out CV,
+        numerically identical to the C++ ``recommend_estimator``.  When set to an
+        integer ``k``, k-fold CV is used instead: ``n/k`` times fewer covariance
+        fits, so much faster on large sample counts, at the cost of a slightly
+        different (higher-variance) score.  The recommended estimator is usually
+        unchanged; use it to trade a little selection precision for speed.
 
     Returns
     -------
@@ -209,7 +391,7 @@ def analyze(
         genes = [f"gene_{i}" for i in range(p)]
     else:
         genes = list(genes)
-    ranking = recommend_estimator(X, labels)
+    ranking = _rank_estimators(X, labels, progress=progress, cv_folds=cv_folds)
     if not ranking:
         raise RuntimeError("no estimator in the grid produced a valid fit")
     edges = top_edges(np.asarray(ranking[0].covariance), genes, top_fraction)
