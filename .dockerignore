@@ -1,0 +1,43 @@
+# Keep the build context small and reproducible. The builder stage compiles
+# the C++ core from source, so we exclude every local build artifact, virtualenv,
+# and cache — none of it should influence or bloat the image.
+
+# Local build trees (the image builds its own in build-docker/)
+build/
+build-*/
+cmake-build-*/
+/tmp/
+
+# Compiled artifacts (rebuilt inside the image)
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Virtualenvs
+.goldenv/
+.venv/
+venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# VCS + CI + editor
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Docs and large local data (not needed at runtime)
+docs/_build/
+data/*.local.*
+tests/_tmp_*
+bench_speed.py
