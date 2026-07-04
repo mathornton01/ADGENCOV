@@ -35,3 +35,6 @@ docs/**/*.toc
 # Data artifacts
 *.tmp
 /data/*.local.*
+
+# Golden-value generation virtualenv
+.goldenv/
