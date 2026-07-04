@@ -20,14 +20,22 @@ dependencies = ["numpy>=1.21"]
 # stdlib urllib handles downloads; GEOparse is optional for richer platform
 # annotation, requests optional for alternative transports.
 geo = ["pandas>=1.3", "GEOparse>=2.0", "requests>=2.28"]
-api = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2"]
+# HTTP service (adgencov.api): FastAPI app + uvicorn server. python-multipart is
+# required by FastAPI to parse multipart uploads; httpx backs the TestClient.
+api = [
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "pydantic>=2",
+  "python-multipart>=0.0.9",
+  "httpx>=0.27",
+]
 test = ["pytest>=7", "scikit-learn>=1.0"]
 
 [tool.setuptools]
 # Pure-Python package; the compiled extension adgencov._core is produced by the
 # top-level CMake build (bindings/CMakeLists.txt drops _core*.so into this dir).
 # A future turn will move to scikit-build-core for a self-contained wheel.
-packages = ["adgencov"]
+packages = ["adgencov", "adgencov.api"]
 
 [tool.setuptools.package-data]
 adgencov = ["*.so", "*.pyd", "*.dylib"]

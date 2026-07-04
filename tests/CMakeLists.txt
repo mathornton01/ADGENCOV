@@ -43,4 +43,14 @@ if(ADGENCOV_BUILD_PYTHON)
   set_tests_properties(geo_ingestion PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
     DEPENDS adgencov_core)
+
+  # FastAPI service (Phase C) — drives the ASGI app via TestClient over the
+  # committed fixtures, fully offline. Skips gracefully (pytest importorskip)
+  # if fastapi/httpx aren't installed; CI installs the [api] extra so it runs.
+  add_test(NAME api_service
+    COMMAND ${Python_EXECUTABLE} -m pytest -q
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_api.py)
+  set_tests_properties(api_service PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
+    DEPENDS adgencov_core)
 endif()

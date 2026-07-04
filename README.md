@@ -107,6 +107,44 @@ The GEO→recommender path is verified end-to-end in `tests/test_geo.py` (run by
 `ctest` as `geo_ingestion`): on a fixture sharing the CLI golden's genes it
 reproduces the reference recommendation to 1e-9.
 
+## HTTP service
+
+`adgencov.api` is a FastAPI backend that turns the core + GEO ingestion into a
+web service — the server the web dashboard (Phase D) and hosted portal call.
+Submit an uploaded matrix or a GEO accession; the work runs as an asynchronous
+job and returns the same `to_dict()` JSON as the Python API.
+
+```sh
+pip install 'adgencov[api]'                 # fastapi, uvicorn, python-multipart, httpx
+PYTHONPATH=python uvicorn adgencov.api:app  # interactive docs at /docs
+```
+
+```
+GET    /health                 liveness + version + active-job count
+POST   /analyze/upload         multipart matrix (TSV/CSV) + params  -> 202 {job}
+POST   /analyze/geo            JSON {accession, ...params}          -> 202 {job}
+GET    /jobs                   list jobs (newest first)
+GET    /jobs/{id}              job detail; result present once state=succeeded
+DELETE /jobs/{id}              forget/cancel a job
+```
+
+```python
+import time, httpx
+
+c = httpx.Client(base_url="http://localhost:8000")
+job = c.post("/analyze/geo", json={"accession": "GSE52778", "group": "gene_family"}).json()
+while (d := c.get(f"/jobs/{job['id']}").json())["state"] not in ("succeeded", "failed"):
+    time.sleep(1.0)
+print(d["result"]["recommended"], d["result"]["ranking"][0]["loo_nll"])
+```
+
+Numerics run on a background thread pool (the C++ core releases the GIL), so the
+API stays responsive under load. CORS is preconfigured for
+`thorntonstatistical.com` and localhost dev servers. The service is driven
+end-to-end over HTTP in `tests/test_api.py` (run by `ctest` as `api_service`):
+it proves the web boundary doesn't perturb the numerics and reproduces the 1e-9
+pipeline golden through the GEO endpoint — fully offline.
+
 ## Roadmap — from library to product
 
 The numerical core (projection, estimators, model selection, clustering) is
@@ -116,13 +154,18 @@ complete and verified. The product layers build on top of it:
 - **B. GEO ingestion** — pull transcriptomics series by accession → matrix →
   pipeline, with local caching. ✅ *done* (`adgencov.geo`)
 - **C. FastAPI backend** — async jobs over upload/accession → JSON
-  (recommendations, covariance, edges, blocks); auto OpenAPI docs.
+  (recommendations, covariance, edges, blocks); auto OpenAPI docs. ✅ *done*
+  (`adgencov.api`)
 - **D. Web dashboard** — accession/upload → ranking table, covariance heatmap,
   network graph, block view.
-- **E. Compare-to-databases** — pathway/GO enrichment and reference
-  co-expression overlays for discovered gene blocks.
-- **F. Desktop app** — the same web UI wrapped for offline use.
-- **G. Deploy + CI** — containerized service and cross-platform test matrix.
+- **E. Compare-to-databases** — cross-reference discovered gene blocks and
+  covariance edges against the [STRING](https://string-db.org) protein–protein
+  interaction database (functional enrichment + edge overlap).
+- **F. Desktop app** — a native **Qt** GUI over the same service/core, for a
+  standalone offline scientific tool.
+- **G. Deploy + CI** — containerized service hosted on
+  **thorntonstatistical.com**; cross-platform test matrix already green (CI). ✅
+  *CI done*
 
 ## Citing
 
