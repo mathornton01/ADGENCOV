@@ -1,5 +1,7 @@
 # ADGENCOV
 
+[![CI](https://github.com/mathornton01/ADGENCOV/actions/workflows/ci.yml/badge.svg)](https://github.com/mathornton01/ADGENCOV/actions/workflows/ci.yml)
+
 Algebraic-Diversity Genetic Covariance estimation for transcriptomics.
 
 `adgencov` estimates gene–gene covariance and precision (partial-correlation)

@@ -1,0 +1,67 @@
+name: CI
+
+# Build the C++ core + CLI + pybind11 module and run the full ctest suite
+# (Catch2 C++ tests + the Python parity/GEO pytest suites) on every push and PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # numpy + pandas drive the GEO suite; scikit-learn is the reference the
+      # shrinkage/clustering parity tests compare against; pytest is the runner.
+      - name: Install Python test dependencies
+        run: python -m pip install --upgrade pip numpy pandas scikit-learn pytest
+
+      # Cache the FetchContent downloads (Eigen, Catch2, pybind11) so we don't
+      # git-clone them on every run. Isolated from the build tree via
+      # FETCHCONTENT_BASE_DIR so a stale build dir never poisons the cache.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.deps
+          key: deps-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DADGENCOV_BUILD_CLI=ON
+          -DADGENCOV_BUILD_TESTS=ON
+          -DADGENCOV_BUILD_PYTHON=ON
+          -DPython_EXECUTABLE="${{ steps.python.outputs.python-path }}"
+          -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # --config Release is ignored on single-config generators (Make/Ninja) and
+      # honoured on multi-config ones (Visual Studio) — one line works on all 3.
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
