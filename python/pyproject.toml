@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adgencov"
+version = "0.1.0"
+description = "Algebraic-Diversity Genetic Covariance estimation for transcriptomics (Python API over the C++ core)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "LicenseRef-ADGENCOV-Modified-MIT" }
+authors = [
+  { name = "Thornton & Thornton" },
+  { name = "Clearpoint Research LLC" },
+]
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+# Layers built in later roadmap phases (GEO ingestion, backend service).
+geo = ["GEOparse>=2.0", "requests>=2.28"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2"]
+test = ["pytest>=7", "scikit-learn>=1.0"]
+
+[tool.setuptools]
+# Pure-Python package; the compiled extension adgencov._core is produced by the
+# top-level CMake build (bindings/CMakeLists.txt drops _core*.so into this dir).
+# A future turn will move to scikit-build-core for a self-contained wheel.
+packages = ["adgencov"]
+
+[tool.setuptools.package-data]
+adgencov = ["*.so", "*.pyd", "*.dylib"]

@@ -45,7 +45,7 @@ endif()
 
 # ---- Python bindings -----------------------------------------------------
 if(ADGENCOV_BUILD_PYTHON)
-  # add_subdirectory(bindings)
+  add_subdirectory(bindings)
 endif()
 
 message(STATUS "adgencov ${PROJECT_VERSION} configured "

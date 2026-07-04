@@ -38,3 +38,24 @@ if(ADGENCOV_BUILD_TESTS)
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
   message(STATUS "adgencov: fetched Catch2 v3.5.4")
 endif()
+
+# ---- pybind11 (Python bindings) ------------------------------------------
+# Only needed when ADGENCOV_BUILD_PYTHON=ON.  Fetched by default so a fresh
+# clone can build the Python module with no system pybind11; set
+# ADGENCOV_PYBIND11_PROVIDER=system to use a pip/apt-installed copy instead
+# (find its cmake dir with `python -m pybind11 --cmakedir`).
+if(ADGENCOV_BUILD_PYTHON)
+  set(ADGENCOV_PYBIND11_PROVIDER "fetch" CACHE STRING
+      "Where to get pybind11: 'fetch' (download) or 'system' (find_package)")
+  if(ADGENCOV_PYBIND11_PROVIDER STREQUAL "system")
+    find_package(pybind11 2.11 REQUIRED CONFIG)
+    message(STATUS "adgencov: using system pybind11 ${pybind11_VERSION}")
+  else()
+    FetchContent_Declare(pybind11
+      GIT_REPOSITORY https://github.com/pybind/pybind11.git
+      GIT_TAG        v2.13.6
+      GIT_SHALLOW    TRUE)
+    FetchContent_MakeAvailable(pybind11)
+    message(STATUS "adgencov: fetched pybind11 v2.13.6")
+  endif()
+endif()

@@ -1,0 +1,211 @@
+// adgencov_py.cpp — pybind11 bindings for the ADGENCOV C++ core.
+//
+// Exposes the full numerical + I/O pipeline (projection, estimator family,
+// model selection, clustering, expression I/O, preprocessing, group builders)
+// to Python.  Eigen matrices/vectors convert transparently to and from NumPy
+// arrays via pybind11/eigen.h, so callers work in idiomatic NumPy while the
+// heavy lifting runs in vectorised C++.
+//
+// This module is the language boundary for the higher layers of the product:
+// the GEO-ingestion module, the FastAPI service, and the web/desktop GUIs all
+// drive the fast path through `import adgencov` (which re-exports `_core`).
+//
+// The importable name is `adgencov._core`.  Every function mirrors the
+// prototype ad_covariance_app.py exactly and is parity-tested to ~1e-9 in
+// tests/test_bindings.py.
+
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/eigen.h>
+
+#include "adgencov/projection.hpp"
+#include "adgencov/shrink.hpp"
+#include "adgencov/select.hpp"
+#include "adgencov/clustering.hpp"
+#include "adgencov/io.hpp"
+#include "adgencov/preprocess.hpp"
+#include "adgencov/groups.hpp"
+
+namespace py = pybind11;
+using namespace adgencov;
+
+PYBIND11_MODULE(_core, m) {
+  m.doc() =
+      "ADGENCOV C++ core (Algebraic-Diversity Genetic Covariance).\n"
+      "Vectorised Eigen implementation of the Applications Note pipeline, "
+      "bound to NumPy via pybind11.  Import `adgencov` for the friendly API.";
+  m.attr("__version__") = "0.1.0";
+
+  // ---- projection.hpp ----------------------------------------------------
+  m.def("reynolds_project", &reynolds_project, py::arg("S"), py::arg("labels"),
+        R"doc(Project a covariance onto the block-exchangeable commutant.
+
+The Reynolds (group-averaging) projection for independent within-block
+permutation symmetries: averages within-block diagonals, within-block
+off-diagonals, and each ordered pair of cross-block entries.
+
+Parameters
+----------
+S : (p, p) float64 ndarray
+    Symmetric covariance matrix.
+labels : sequence of int, length p
+    Block id per variable (only equality matters).
+
+Returns
+-------
+(p, p) ndarray
+    The symmetric projected covariance.)doc");
+
+  // ---- shrink.hpp --------------------------------------------------------
+  m.def("sample_covariance", &sample_covariance, py::arg("X"),
+        py::arg("unbiased") = true,
+        "Sample covariance of a samples-by-genes matrix X (n rows, p cols). "
+        "unbiased=True divides by (n-1) (numpy.cov default); False divides by n.");
+  m.def("make_pd", &make_pd, py::arg("S"), py::arg("floor") = 1e-5,
+        "Nearest SPD matrix by flooring eigenvalues at `floor` (symmetrised first).");
+  m.def("ridge", &ridge, py::arg("S"), py::arg("alpha"),
+        "Diagonal-loading shrinkage: (1-alpha)*S + alpha*(tr(S)/p)*I.");
+  m.def("soft_threshold_offdiag", &soft_threshold_offdiag, py::arg("S"),
+        py::arg("lam"), py::arg("l1_ratio") = 1.0,
+        "Soft-threshold off-diagonals (LASSO/elastic-net covariance).");
+  m.def("ledoit_wolf_shrinkage", &ledoit_wolf_shrinkage, py::arg("X"),
+        "Ledoit-Wolf optimal shrinkage intensity in [0,1] (matches scikit-learn).");
+  m.def("ledoit_wolf", &ledoit_wolf, py::arg("X"),
+        "Ledoit-Wolf covariance estimate from data X.");
+  m.def("oas_shrinkage", &oas_shrinkage, py::arg("X"),
+        "Oracle Approximating Shrinkage intensity in [0,1] (matches scikit-learn).");
+  m.def("oas", &oas, py::arg("X"), "OAS covariance estimate from data X.");
+
+  // ---- select.hpp --------------------------------------------------------
+  py::class_<EstimatorSpec>(m, "EstimatorSpec",
+                            "A candidate estimator: a method name plus scalar "
+                            "hyper-parameters (e.g. alpha, lam, l1_ratio).")
+      .def(py::init<>())
+      .def(py::init([](std::string method, std::map<std::string, double> params) {
+             return EstimatorSpec{std::move(method), std::move(params)};
+           }),
+           py::arg("method"),
+           py::arg("params") = std::map<std::string, double>{})
+      .def_readwrite("method", &EstimatorSpec::method)
+      .def_readwrite("params", &EstimatorSpec::params)
+      .def("__repr__", [](const EstimatorSpec& s) {
+        std::string r = "EstimatorSpec(method='" + s.method + "', params={";
+        bool first = true;
+        for (const auto& kv : s.params) {
+          if (!first) r += ", ";
+          r += "'" + kv.first + "': " + std::to_string(kv.second);
+          first = false;
+        }
+        return r + "})";
+      });
+
+  py::class_<EstimatorResult>(m, "EstimatorResult",
+                              "One scored candidate: spec, full-data SPD "
+                              "covariance, LOO-NLL, and 2-norm condition number.")
+      .def_readonly("spec", &EstimatorResult::spec)
+      .def_readonly("covariance", &EstimatorResult::covariance)
+      .def_readonly("loo_nll", &EstimatorResult::loo_nll)
+      .def_readonly("condition_number", &EstimatorResult::condition_number)
+      .def("__repr__", [](const EstimatorResult& r) {
+        return "EstimatorResult(method='" + r.spec.method +
+               "', loo_nll=" + std::to_string(r.loo_nll) +
+               ", cond=" + std::to_string(r.condition_number) + ")";
+      });
+
+  // Bound with the struct spec...
+  m.def("estimate_covariance",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
+                          const EstimatorSpec&>(&estimate_covariance),
+        py::arg("X"), py::arg("labels"), py::arg("spec"),
+        "Dispatch to the named estimator; AD variants project first; result "
+        "is always make_pd'd.");
+  // ...and a convenience overload taking (method, params) directly.
+  m.def(
+      "estimate_covariance",
+      [](const Eigen::MatrixXd& X, const std::vector<int>& labels,
+         const std::string& method, std::map<std::string, double> params) {
+        return estimate_covariance(X, labels, EstimatorSpec{method, std::move(params)});
+      },
+      py::arg("X"), py::arg("labels"), py::arg("method"),
+      py::arg("params") = std::map<std::string, double>{},
+      "Convenience form: estimate_covariance(X, labels, method, params_dict).");
+
+  m.def("gaussian_nll_one", &gaussian_nll_one, py::arg("x"), py::arg("mu"),
+        py::arg("Sigma"),
+        "Per-observation multivariate-Gaussian NLL (Sigma passed through make_pd).");
+
+  m.def("loo_nll",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
+                          const EstimatorSpec&>(&loo_nll),
+        py::arg("X"), py::arg("labels"), py::arg("spec"),
+        "Leave-one-out CV mean NLL (rank-1 downdate fast path for covariance-only "
+        "methods).");
+  m.def(
+      "loo_nll",
+      [](const Eigen::MatrixXd& X, const std::vector<int>& labels,
+         const std::string& method, std::map<std::string, double> params) {
+        return loo_nll(X, labels, EstimatorSpec{method, std::move(params)});
+      },
+      py::arg("X"), py::arg("labels"), py::arg("method"),
+      py::arg("params") = std::map<std::string, double>{},
+      "Convenience form: loo_nll(X, labels, method, params_dict).");
+
+  m.def("candidate_grid", &candidate_grid, py::arg("p"), py::arg("n"),
+        "The conservative candidate grid for a (p genes, n samples) problem.");
+  m.def("recommend_estimator", &recommend_estimator, py::arg("X"),
+        py::arg("labels"),
+        "Score the candidate grid and return results sorted by ascending LOO-NLL.");
+
+  // ---- clustering.hpp ----------------------------------------------------
+  m.def("agglomerative_average", &agglomerative_average, py::arg("dist"),
+        py::arg("n_clusters"),
+        "UPGMA average-linkage clustering on a precomputed distance matrix "
+        "(matches sklearn AgglomerativeClustering metric='precomputed').");
+
+  // ---- io.hpp ------------------------------------------------------------
+  py::class_<Table>(m, "Table", "A parsed delimited table (headers + string cells).")
+      .def_readonly("headers", &Table::headers)
+      .def_readonly("rows", &Table::rows)
+      .def_property_readonly("ncol", &Table::ncol)
+      .def_property_readonly("nrow", &Table::nrow)
+      .def("col_index", &Table::col_index, py::arg("name"));
+
+  py::class_<ExpressionData>(m, "ExpressionData",
+                             "A genes-by-samples expression matrix with names.")
+      .def_readonly("genes", &ExpressionData::genes)
+      .def_readonly("sample_cols", &ExpressionData::sample_cols)
+      .def_readonly("values", &ExpressionData::values);
+
+  m.def("read_table", &read_table, py::arg("path"),
+        "Read a delimited text file, sniffing the delimiter from the header.");
+  m.def("load_expression_matrix", &load_expression_matrix, py::arg("path"),
+        py::arg("sample_regex"), py::arg("gene_col") = "gene_short_name",
+        "Load an expression/count matrix; sample columns match sample_regex.");
+  m.def("write_matrix_csv", &write_matrix_csv, py::arg("path"), py::arg("M"),
+        py::arg("row_names") = std::vector<std::string>{},
+        py::arg("col_names") = std::vector<std::string>{},
+        "Write a matrix as CSV with optional row/column headers.");
+
+  // ---- preprocess.hpp ----------------------------------------------------
+  py::class_<Dataset>(m, "Dataset",
+                      "Analysis-ready standardized samples-by-genes matrix + names.")
+      .def_readonly("X", &Dataset::X)
+      .def_readonly("genes", &Dataset::genes);
+
+  m.def("preprocess", &preprocess, py::arg("data"), py::arg("n_genes") = 500,
+        py::arg("min_mean") = 0.1, py::arg("log_transform") = true,
+        "Preprocess a genes-by-samples ExpressionData into a standardized "
+        "samples-by-genes Dataset.");
+
+  // ---- groups.hpp --------------------------------------------------------
+  m.def("gene_family_label", &gene_family_label, py::arg("gene"),
+        "Transparent gene-family heuristic label for a gene symbol.");
+  m.def("build_group_labels", &build_group_labels, py::arg("dataset"),
+        py::arg("group"), py::arg("annotation") = nullptr,
+        py::arg("group_map") = nullptr, py::arg("n_blocks") = 4,
+        py::return_value_policy::move,
+        "Build per-gene string group labels for the named partition. "
+        "annotation/group_map are Table objects (or None).");
+  m.def("factorize", &factorize, py::arg("labels"),
+        "Factorize string labels into dense integer codes (first-appearance order).");
+}
