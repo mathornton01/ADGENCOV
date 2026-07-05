@@ -158,6 +158,108 @@
     .then(function () { busy(false); setTimeout(function () { showProgress(false); }, 1200); });
   }
 
+  // -- GEO keyword search --------------------------------------------------
+  function runGeoSearch() {
+    var term = $("geo-search-term").value.trim();
+    var status = $("geo-search-status");
+    var list = $("geo-search-results");
+    if (!term) { status.textContent = "Enter one or more keywords."; status.className = "status err"; return; }
+    status.textContent = "Searching GEO…"; status.className = "status";
+    list.classList.add("hidden"); list.innerHTML = "";
+    $("geo-search-btn").disabled = true;
+    fetch(API + "/search/geo?term=" + encodeURIComponent(term) + "&retmax=20")
+      .then(function (r) { return r.json().then(function (b) {
+        if (!r.ok) { throw new Error((b && b.detail) || ("HTTP " + r.status)); } return b; }); })
+      .then(function (body) {
+        var hits = body.hits || [];
+        if (!hits.length) { status.textContent = "No GEO series matched."; return; }
+        status.textContent = hits.length + " series found — click one to use it.";
+        status.className = "status ok";
+        renderGeoHits(hits);
+      })
+      .catch(function (e) { status.textContent = e.message || String(e); status.className = "status err"; })
+      .then(function () { $("geo-search-btn").disabled = false; });
+  }
+
+  function renderGeoHits(hits) {
+    var list = $("geo-search-results");
+    list.innerHTML = "";
+    for (var i = 0; i < hits.length; i++) {
+      var h = hits[i];
+      var li = document.createElement("li");
+      li.className = "hit";
+      li.setAttribute("data-acc", h.accession);
+      var meta = [h.taxon, (h.n_samples ? h.n_samples + " samples" : ""), h.gds_type]
+        .filter(function (x) { return x; }).join(" · ");
+      li.innerHTML =
+        '<div class="hit-head"><span class="acc">' + esc(h.accession) + "</span>" +
+        '<span class="hit-title">' + esc(h.title) + "</span></div>" +
+        '<div class="hit-meta">' + esc(meta) + "</div>";
+      li.addEventListener("click", (function (acc) {
+        return function () {
+          $("accession").value = acc;
+          $("geo-search-status").textContent = "Selected " + acc + " — press Run analysis.";
+          $("geo-search-status").className = "status ok";
+          var items = document.querySelectorAll("#geo-search-results .hit");
+          for (var j = 0; j < items.length; j++) {
+            items[j].classList.toggle("selected", items[j].getAttribute("data-acc") === acc);
+          }
+        };
+      })(h.accession));
+      list.appendChild(li);
+    }
+    list.classList.remove("hidden");
+  }
+
+  // -- protein id translation ----------------------------------------------
+  function runTranslate() {
+    var raw = $("protein-ids").value || "";
+    var ids = raw.split(/[\s,;]+/).map(function (s) { return s.trim(); })
+      .filter(function (s) { return s; });
+    var status = $("protein-status");
+    var table = $("protein-table");
+    if (!ids.length) { status.textContent = "Enter one or more identifiers."; status.className = "status err"; return; }
+    if (ids.length > 500) { status.textContent = "Please limit to 500 ids per request."; status.className = "status err"; return; }
+    status.textContent = "Translating " + ids.length + " id(s)…"; status.className = "status";
+    table.classList.add("hidden");
+    $("protein-btn").disabled = true;
+    fetch(API + "/translate/proteins", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ids, source: $("protein-source").value })
+    })
+      .then(function (r) { return r.json().then(function (b) {
+        if (!r.ok) { throw new Error((b && b.detail) || ("HTTP " + r.status)); } return b; }); })
+      .then(function (body) {
+        renderProteins(body.results || []);
+        status.textContent = body.matched + " of " + body.count + " resolved.";
+        status.className = "status " + (body.matched ? "ok" : "err");
+      })
+      .catch(function (e) { status.textContent = e.message || String(e); status.className = "status err"; })
+      .then(function () { $("protein-btn").disabled = false; });
+  }
+
+  function renderProteins(results) {
+    var table = $("protein-table");
+    var tb = table.getElementsByTagName("tbody")[0];
+    tb.innerHTML = "";
+    for (var i = 0; i < results.length; i++) {
+      var p = results[i];
+      var tr = document.createElement("tr");
+      if (!p.matched) { tr.className = "unmatched"; }
+      var link = p.url
+        ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.accession) + "</a>"
+        : "—";
+      tr.innerHTML =
+        "<td>" + esc(p.query) + "</td>" +
+        "<td>" + (p.matched ? esc(p.name) : '<span class="hint">not found</span>') + "</td>" +
+        "<td>" + esc(p.gene || "") + "</td>" +
+        "<td><em>" + esc(p.organism || "") + "</em></td>" +
+        "<td>" + link + "</td>";
+      tb.appendChild(tr);
+    }
+    table.classList.remove("hidden");
+  }
+
   // -- block ordering ------------------------------------------------------
   // Returns display order of gene indices grouped by block label, plus the
   // block groups themselves (label -> ordered member indices).
@@ -400,6 +502,13 @@
       tabs[i].addEventListener("click", function (ev) { selectSource(ev.target.getAttribute("data-source")); });
     }
     $("analyze-form").addEventListener("submit", onSubmit);
+    // GEO keyword search
+    $("geo-search-btn").addEventListener("click", runGeoSearch);
+    $("geo-search-term").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); runGeoSearch(); }
+    });
+    // Protein id translator
+    $("protein-btn").addEventListener("click", runTranslate);
     selectSource("geo");
     loadVersion();
   }

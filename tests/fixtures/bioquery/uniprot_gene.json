@@ -1,0 +1,2191 @@
+{
+ "results": [
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P04637",
+   "uniProtkbId": "P53_HUMAN",
+   "organism": {
+    "scientificName": "Homo sapiens",
+    "commonName": "Human",
+    "taxonId": 9606,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Hominidae",
+     "Homo"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Antigen NY-CO-13"
+      }
+     },
+     {
+      "fullName": {
+       "value": "Phosphoprotein p53"
+      }
+     },
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "7157",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000002ED67"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P67939",
+   "uniProtkbId": "P53_BOVIN",
+   "organism": {
+    "scientificName": "Bos taurus",
+    "commonName": "Bovine",
+    "taxonId": 9913,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Artiodactyla",
+     "Ruminantia",
+     "Pecora",
+     "Bovidae",
+     "Bovinae",
+     "Bos"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "281542",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131035"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P10361",
+   "uniProtkbId": "P53_RAT",
+   "organism": {
+    "scientificName": "Rattus norvegicus",
+    "commonName": "Rat",
+    "taxonId": 10116,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Myomorpha",
+     "Muroidea",
+     "Muridae",
+     "Murinae",
+     "Rattus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "Tp53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "24842",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131048"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P79734",
+   "uniProtkbId": "P53_DANRE",
+   "organism": {
+    "scientificName": "Danio rerio",
+    "commonName": "Zebrafish",
+    "synonyms": [
+     "Brachydanio rerio"
+    ],
+    "taxonId": 7955,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Ostariophysi",
+     "Cypriniformes",
+     "Danionidae",
+     "Danioninae",
+     "Danio"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "drp53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "30590",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131036"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P02340",
+   "uniProtkbId": "P53_MOUSE",
+   "organism": {
+    "scientificName": "Mus musculus",
+    "commonName": "Mouse",
+    "taxonId": 10090,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Myomorpha",
+     "Muroidea",
+     "Muridae",
+     "Murinae",
+     "Mus",
+     "Mus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "Tp53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      },
+      {
+       "value": "Trp53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "22059",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI00000002B3"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P10360",
+   "uniProtkbId": "P53_CHICK",
+   "organism": {
+    "scientificName": "Gallus gallus",
+    "commonName": "Chicken",
+    "taxonId": 9031,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Archelosauria",
+     "Archosauria",
+     "Dinosauria",
+     "Saurischia",
+     "Theropoda",
+     "Coelurosauria",
+     "Aves",
+     "Neognathae",
+     "Galloanserae",
+     "Galliformes",
+     "Phasianidae",
+     "Phasianinae",
+     "Gallus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "396200",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103A"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q64662",
+   "uniProtkbId": "P53_OTOBE",
+   "organism": {
+    "scientificName": "Otospermophilus beecheyi",
+    "commonName": "California ground squirrel",
+    "synonyms": [
+     "Spermophilus beecheyi"
+    ],
+    "taxonId": 34862,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Sciuromorpha",
+     "Sciuridae",
+     "Xerinae",
+     "Marmotini",
+     "Otospermophilus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ],
+    "flag": "Fragment"
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104A"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q95330",
+   "uniProtkbId": "P53_RABIT",
+   "organism": {
+    "scientificName": "Oryctolagus cuniculus",
+    "commonName": "Rabbit",
+    "taxonId": 9986,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Lagomorpha",
+     "Leporidae",
+     "Oryctolagus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100009292",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131047"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q9WUR6",
+   "uniProtkbId": "P53_CAVPO",
+   "organism": {
+    "scientificName": "Cavia porcellus",
+    "commonName": "Guinea pig",
+    "taxonId": 10141,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Hystricomorpha",
+     "Caviidae",
+     "Cavia"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100379269",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131038"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "O36006",
+   "uniProtkbId": "P53_MARMO",
+   "organism": {
+    "scientificName": "Marmota monax",
+    "commonName": "Woodchuck",
+    "taxonId": 9995,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Sciuromorpha",
+     "Sciuridae",
+     "Xerinae",
+     "Marmotini",
+     "Marmota"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131041"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P13481",
+   "uniProtkbId": "P53_CHLAE",
+   "organism": {
+    "scientificName": "Chlorocebus aethiops",
+    "commonName": "Green monkey",
+    "synonyms": [
+     "Cercopithecus aethiops"
+    ],
+    "taxonId": 9534,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Cercopithecidae",
+     "Cercopithecinae",
+     "Chlorocebus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131039"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q29480",
+   "uniProtkbId": "P53_EQUAS",
+   "organism": {
+    "scientificName": "Equus asinus",
+    "commonName": "Donkey",
+    "synonyms": [
+     "Equus africanus asinus"
+    ],
+    "taxonId": 9793,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Perissodactyla",
+     "Equidae",
+     "Equus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ],
+    "flag": "Fragment"
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103C"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P07193",
+   "uniProtkbId": "P53_XENLA",
+   "organism": {
+    "scientificName": "Xenopus laevis",
+    "commonName": "African clawed frog",
+    "taxonId": 8355,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Amphibia",
+     "Batrachia",
+     "Anura",
+     "Pipoidea",
+     "Pipidae",
+     "Xenopodinae",
+     "Xenopus",
+     "Xenopus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "397926",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104D"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P51664",
+   "uniProtkbId": "P53_SHEEP",
+   "organism": {
+    "scientificName": "Ovis aries",
+    "commonName": "Sheep",
+    "taxonId": 9940,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Artiodactyla",
+     "Ruminantia",
+     "Pecora",
+     "Bovidae",
+     "Caprinae",
+     "Ovis"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "443421",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131049"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P67938",
+   "uniProtkbId": "P53_BOSIN",
+   "organism": {
+    "scientificName": "Bos indicus",
+    "commonName": "Zebu",
+    "taxonId": 9915,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Artiodactyla",
+     "Ruminantia",
+     "Pecora",
+     "Bovidae",
+     "Bovinae",
+     "Bos"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "109574238",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131035"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q00366",
+   "uniProtkbId": "P53_MESAU",
+   "organism": {
+    "scientificName": "Mesocricetus auratus",
+    "commonName": "Golden hamster",
+    "taxonId": 10036,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Myomorpha",
+     "Muroidea",
+     "Cricetidae",
+     "Cricetinae",
+     "Mesocricetus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     }
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "101833915",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131042"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "O09185",
+   "uniProtkbId": "P53_CRIGR",
+   "organism": {
+    "scientificName": "Cricetulus griseus",
+    "commonName": "Chinese hamster",
+    "synonyms": [
+     "Cricetulus barabensis griseus"
+    ],
+    "taxonId": 10029,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Glires",
+     "Rodentia",
+     "Myomorpha",
+     "Muroidea",
+     "Cricetidae",
+     "Cricetinae",
+     "Cricetulus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100682525",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103B"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q8SPZ3",
+   "uniProtkbId": "P53_DELLE",
+   "organism": {
+    "scientificName": "Delphinapterus leucas",
+    "commonName": "Beluga whale",
+    "taxonId": 9749,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Artiodactyla",
+     "Whippomorpha",
+     "Cetacea",
+     "Odontoceti",
+     "Monodontidae",
+     "Delphinapterus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "111185755",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000087D9C"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q9TTA1",
+   "uniProtkbId": "P53_TUPBE",
+   "organism": {
+    "scientificName": "Tupaia belangeri",
+    "commonName": "Northern treeshrew",
+    "synonyms": [
+     "Tupaia glis belangeri"
+    ],
+    "taxonId": 37347,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Scandentia",
+     "Tupaiidae",
+     "Tupaia"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104C"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P41685",
+   "uniProtkbId": "P53_FELCA",
+   "organism": {
+    "scientificName": "Felis catus",
+    "commonName": "Cat",
+    "synonyms": [
+     "Felis silvestris catus"
+    ],
+    "taxonId": 9685,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Carnivora",
+     "Feliformia",
+     "Felidae",
+     "Felinae",
+     "Felis"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "TRP53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "493847",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103D"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P56424",
+   "uniProtkbId": "P53_MACMU",
+   "organism": {
+    "scientificName": "Macaca mulatta",
+    "commonName": "Rhesus macaque",
+    "taxonId": 9544,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Cercopithecidae",
+     "Cercopithecinae",
+     "Macaca"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "716170",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000001706"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P79820",
+   "uniProtkbId": "P53_ORYLA",
+   "organism": {
+    "scientificName": "Oryzias latipes",
+    "commonName": "Japanese rice fish",
+    "synonyms": [
+     "Japanese killifish"
+    ],
+    "taxonId": 8090,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Neoteleostei",
+     "Acanthomorphata",
+     "Ovalentaria",
+     "Atherinomorphae",
+     "Beloniformes",
+     "Adrianichthyidae",
+     "Oryziinae",
+     "Oryzias"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100049321",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131044"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P79892",
+   "uniProtkbId": "P53_HORSE",
+   "organism": {
+    "scientificName": "Equus caballus",
+    "commonName": "Horse",
+    "taxonId": 9796,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Perissodactyla",
+     "Equidae",
+     "Equus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ],
+    "flag": "Fragment"
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103E"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q29537",
+   "uniProtkbId": "P53_CANLF",
+   "organism": {
+    "scientificName": "Canis lupus familiaris",
+    "commonName": "Dog",
+    "synonyms": [
+     "Canis familiaris"
+    ],
+    "taxonId": 9615,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Carnivora",
+     "Caniformia",
+     "Canidae",
+     "Canis"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131037"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P61260",
+   "uniProtkbId": "P53_MACFU",
+   "organism": {
+    "scientificName": "Macaca fuscata fuscata",
+    "commonName": "Japanese macaque",
+    "taxonId": 9543,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Cercopithecidae",
+     "Cercopithecinae",
+     "Macaca"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000001706"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P56423",
+   "uniProtkbId": "P53_MACFA",
+   "organism": {
+    "scientificName": "Macaca fascicularis",
+    "commonName": "Crab-eating macaque",
+    "synonyms": [
+     "Cynomolgus monkey"
+    ],
+    "taxonId": 9541,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Cercopithecidae",
+     "Cercopithecinae",
+     "Macaca"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "102135998",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000001706"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q9TUB2",
+   "uniProtkbId": "P53_PIG",
+   "organism": {
+    "scientificName": "Sus scrofa",
+    "commonName": "Pig",
+    "taxonId": 9823,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Laurasiatheria",
+     "Artiodactyla",
+     "Suina",
+     "Suidae",
+     "Sus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "397276",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131045"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P25035",
+   "uniProtkbId": "P53_ONCMY",
+   "organism": {
+    "scientificName": "Oncorhynchus mykiss",
+    "commonName": "Rainbow trout",
+    "synonyms": [
+     "Salmo gairdneri"
+    ],
+    "taxonId": 8022,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Protacanthopterygii",
+     "Salmoniformes",
+     "Salmonidae",
+     "Salmoninae",
+     "Oncorhynchus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100136737",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131043"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "O93379",
+   "uniProtkbId": "P53_ICTPU",
+   "organism": {
+    "scientificName": "Ictalurus punctatus",
+    "commonName": "Channel catfish",
+    "synonyms": [
+     "Silurus punctatus"
+    ],
+    "taxonId": 7998,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Ostariophysi",
+     "Siluriformes",
+     "Ictaluridae",
+     "Ictalurus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "100304476",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013103F"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "O12946",
+   "uniProtkbId": "P53_PLAFE",
+   "organism": {
+    "scientificName": "Platichthys flesus",
+    "commonName": "European flounder",
+    "synonyms": [
+     "Pleuronectes flesus"
+    ],
+    "taxonId": 8260,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Neoteleostei",
+     "Acanthomorphata",
+     "Carangaria",
+     "Pleuronectiformes",
+     "Pleuronectoidei",
+     "Pleuronectidae",
+     "Platichthys"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131046"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "O57538",
+   "uniProtkbId": "P53_XIPHE",
+   "organism": {
+    "scientificName": "Xiphophorus hellerii",
+    "commonName": "Green swordtail",
+    "taxonId": 8084,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Neoteleostei",
+     "Acanthomorphata",
+     "Ovalentaria",
+     "Atherinomorphae",
+     "Cyprinodontiformes",
+     "Poeciliidae",
+     "Poeciliinae",
+     "Xiphophorus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "116732253",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104E"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q9W678",
+   "uniProtkbId": "P53_BARBU",
+   "organism": {
+    "scientificName": "Barbus barbus",
+    "commonName": "Barbel",
+    "synonyms": [
+     "Cyprinus barbus"
+    ],
+    "taxonId": 40830,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Ostariophysi",
+     "Cypriniformes",
+     "Cyprinidae",
+     "Barbinae",
+     "Barbus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI0000131034"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q92143",
+   "uniProtkbId": "P53_XIPMA",
+   "organism": {
+    "scientificName": "Xiphophorus maculatus",
+    "commonName": "Southern platyfish",
+    "synonyms": [
+     "Platypoecilus maculatus"
+    ],
+    "taxonId": 8083,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Neoteleostei",
+     "Acanthomorphata",
+     "Ovalentaria",
+     "Atherinomorphae",
+     "Cyprinodontiformes",
+     "Poeciliidae",
+     "Poeciliinae",
+     "Xiphophorus"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "102219062",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104F"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "Q9W679",
+   "uniProtkbId": "P53_TETMU",
+   "organism": {
+    "scientificName": "Tetraodon miurus",
+    "commonName": "Congo puffer",
+    "taxonId": 94908,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Actinopterygii",
+     "Neopterygii",
+     "Teleostei",
+     "Neoteleostei",
+     "Acanthomorphata",
+     "Eupercaria",
+     "Tetraodontiformes",
+     "Tetradontoidea",
+     "Tetraodontidae",
+     "Tetraodon"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "tp53"
+     },
+     "synonyms": [
+      {
+       "value": "p53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [],
+   "extraAttributes": {
+    "uniParcId": "UPI000013104B"
+   }
+  }
+ ]
+}

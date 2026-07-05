@@ -29,6 +29,16 @@
 
       <form id="analyze-form">
         <div class="source-fields" id="fields-geo">
+          <div class="geo-search">
+            <label>Search GEO by keywords
+              <div class="search-row">
+                <input type="text" id="geo-search-term" placeholder="e.g. dexamethasone airway smooth muscle" autocomplete="off" />
+                <button type="button" id="geo-search-btn" class="mini">Search</button>
+              </div>
+            </label>
+            <p class="status" id="geo-search-status" role="status" aria-live="polite"></p>
+            <ul class="search-results hidden" id="geo-search-results"></ul>
+          </div>
           <label>GEO accession
             <input type="text" id="accession" name="accession" placeholder="GSE52778" autocomplete="off" />
           </label>
@@ -89,6 +99,30 @@
           </div>
         </div>
       </form>
+    </section>
+
+    <!-- ---------------- protein id translator ---------------- -->
+    <section class="panel tool" id="protein-tool" aria-label="Protein ID translator">
+      <h2>Protein ID translator</h2>
+      <p class="hint">Paste UniProt accessions (P04637), Entrez GeneIDs (7157), or gene symbols (TP53) &mdash; one per line, or comma/space separated.</p>
+      <textarea id="protein-ids" rows="3" placeholder="P04637, 7157, TP53"></textarea>
+      <div class="tool-row">
+        <label>Id space
+          <select id="protein-source">
+            <option value="auto">auto-detect</option>
+            <option value="uniprot">UniProt accession</option>
+            <option value="geneid">Entrez GeneID</option>
+            <option value="gene">gene symbol</option>
+          </select>
+        </label>
+        <button type="button" id="protein-btn" class="run">Translate</button>
+      </div>
+      <p class="status" id="protein-status" role="status" aria-live="polite"></p>
+      <div class="scroll">
+        <table id="protein-table" class="hidden"><thead><tr>
+          <th>Query</th><th>Protein name</th><th>Gene</th><th>Organism</th><th>UniProt</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
     </section>
 
     <!-- ---------------- results ---------------- -->

@@ -5,6 +5,8 @@ Endpoints
 ``GET  /health``               liveness + version + active-job count
 ``POST /analyze/upload``       multipart matrix upload → job id
 ``POST /analyze/geo``          JSON {accession, ...params} → job id
+``GET  /search/geo``           term search → matching GEO series (GSE…)
+``POST /translate/proteins``   protein/gene ids → protein names (UniProt)
 ``GET  /jobs``                 list all jobs (newest first)
 ``GET  /jobs/{id}``            job detail (result present once succeeded)
 ``DELETE /jobs/{id}``          forget/cancel a job
@@ -31,10 +33,13 @@ from .. import __version__
 from .jobs import JobKind, JobStore
 from .models import (
     GeoAnalyzeRequest,
+    GeoSearchResponse,
     HealthResponse,
     JobDetail,
     JobList,
     JobSummary,
+    ProteinTranslateRequest,
+    ProteinTranslateResponse,
     UploadParams,
 )
 from .service import run_geo_analysis, run_upload_analysis
@@ -160,6 +165,48 @@ def create_app(
             params=req.model_dump(),
         )
         return JobSummary(**job.summary())
+
+    # -- GEO term search ----------------------------------------------------
+    @app.get("/search/geo", response_model=GeoSearchResponse, tags=["discover"])
+    def search_geo_endpoint(
+        term: str,
+        retmax: int = 20,
+    ) -> GeoSearchResponse:
+        """Find GEO series (GSE…) matching a free-text query via NCBI E-utilities."""
+        from ..bioquery import BioQueryError, search_geo
+
+        if not term or not term.strip():
+            raise HTTPException(status_code=422, detail="query 'term' is required")
+        try:
+            hits = search_geo(term, retmax=retmax)
+        except BioQueryError as exc:
+            raise HTTPException(status_code=502, detail=f"GEO search failed: {exc}")
+        return GeoSearchResponse(
+            term=term.strip(),
+            count=len(hits),
+            hits=[h.to_dict() for h in hits],
+        )
+
+    # -- protein-id translation --------------------------------------------
+    @app.post("/translate/proteins", response_model=ProteinTranslateResponse, tags=["discover"])
+    def translate_proteins_endpoint(
+        req: ProteinTranslateRequest,
+    ) -> ProteinTranslateResponse:
+        """Translate protein/gene identifiers to protein names via UniProt."""
+        from ..bioquery import BioQueryError, translate_protein_ids
+
+        try:
+            names = translate_protein_ids(
+                req.ids, source=req.source, reviewed_only=req.reviewed_only
+            )
+        except BioQueryError as exc:
+            raise HTTPException(status_code=502, detail=f"translation failed: {exc}")
+        results = [n.to_dict() for n in names]
+        return ProteinTranslateResponse(
+            count=len(results),
+            matched=sum(1 for r in results if r["matched"]),
+            results=results,
+        )
 
     # -- jobs ---------------------------------------------------------------
     @app.get("/jobs", response_model=JobList, tags=["jobs"])

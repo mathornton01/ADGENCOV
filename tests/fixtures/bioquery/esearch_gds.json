@@ -1,0 +1,75 @@
+{
+ "header": {
+  "type": "esearch",
+  "version": "0.3"
+ },
+ "esearchresult": {
+  "count": "36",
+  "retmax": "5",
+  "retstart": "0",
+  "idlist": [
+   "200095632",
+   "200052778",
+   "200034313",
+   "3946",
+   "100001261"
+  ],
+  "translationset": [
+   {
+    "from": "dexamethasone",
+    "to": "\"dexamethasone\"[All Fields] OR \"dexamethasone\"[MeSH Terms] OR dexamethasone[All Fields]"
+   },
+   {
+    "from": "smooth muscle",
+    "to": "\"muscle, smooth\"[MeSH Terms] OR smooth muscle[All Fields]"
+   }
+  ],
+  "translationstack": [
+   {
+    "term": "\"dexamethasone\"[All Fields]",
+    "field": "All Fields",
+    "count": "58818",
+    "explode": "N"
+   },
+   {
+    "term": "\"dexamethasone\"[MeSH Terms]",
+    "field": "MeSH Terms",
+    "count": "57462",
+    "explode": "Y"
+   },
+   "OR",
+   {
+    "term": "dexamethasone[All Fields]",
+    "field": "All Fields",
+    "count": "58818",
+    "explode": "N"
+   },
+   "OR",
+   "GROUP",
+   {
+    "term": "airway[All Fields]",
+    "field": "All Fields",
+    "count": "21220",
+    "explode": "N"
+   },
+   "AND",
+   {
+    "term": "\"muscle, smooth\"[MeSH Terms]",
+    "field": "MeSH Terms",
+    "count": "18473",
+    "explode": "Y"
+   },
+   {
+    "term": "smooth muscle[All Fields]",
+    "field": "All Fields",
+    "count": "14380",
+    "explode": "N"
+   },
+   "OR",
+   "GROUP",
+   "AND",
+   "GROUP"
+  ],
+  "querytranslation": "(\"dexamethasone\"[All Fields] OR \"dexamethasone\"[MeSH Terms] OR dexamethasone[All Fields]) AND airway[All Fields] AND (\"muscle, smooth\"[MeSH Terms] OR smooth muscle[All Fields])"
+ }
+}

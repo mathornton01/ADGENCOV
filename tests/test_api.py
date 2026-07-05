@@ -213,3 +213,81 @@ def test_list_and_delete_jobs(client):
     remaining = {j["id"] for j in client.get("/jobs").json()["jobs"]}
     assert ids[0] not in remaining
     assert ids[1] in remaining
+
+
+# ---------------------------------------------------------------------------
+# Discovery endpoints: GEO search + protein translation (network monkeypatched)
+# ---------------------------------------------------------------------------
+def test_search_geo_endpoint(client, monkeypatch):
+    from adgencov import bioquery
+
+    def fake_search(term, retmax=20, **kw):
+        assert term == "asthma"
+        return [
+            bioquery.GeoSearchHit(
+                accession="GSE52778", title="Airway smooth muscle",
+                taxon="Homo sapiens", n_samples=16, uid="200052778",
+                url="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52778",
+            )
+        ]
+
+    monkeypatch.setattr(bioquery, "search_geo", fake_search)
+    r = client.get("/search/geo", params={"term": "asthma"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+    assert body["hits"][0]["accession"] == "GSE52778"
+    assert body["hits"][0]["n_samples"] == 16
+
+
+def test_search_geo_endpoint_requires_term(client):
+    assert client.get("/search/geo").status_code == 422  # missing query param
+
+
+def test_search_geo_endpoint_upstream_failure_is_502(client, monkeypatch):
+    from adgencov import bioquery
+
+    def boom(term, **kw):
+        raise bioquery.BioQueryError("NCBI down")
+
+    monkeypatch.setattr(bioquery, "search_geo", boom)
+    r = client.get("/search/geo", params={"term": "x"})
+    assert r.status_code == 502
+    assert "NCBI down" in r.json()["detail"]
+
+
+def test_translate_proteins_endpoint(client, monkeypatch):
+    from adgencov import bioquery
+
+    def fake_translate(ids, source="auto", reviewed_only=True, **kw):
+        assert list(ids) == ["P04637", "7157"]
+        return [
+            bioquery.ProteinName(query="P04637", matched=True, name="Cellular tumor antigen p53",
+                                 gene="TP53", accession="P04637", source="uniprot"),
+            bioquery.ProteinName(query="7157", matched=True, name="Cellular tumor antigen p53",
+                                 gene="TP53", accession="P04637", source="geneid"),
+        ]
+
+    monkeypatch.setattr(bioquery, "translate_protein_ids", fake_translate)
+    r = client.post("/translate/proteins", json={"ids": ["P04637", "7157"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2 and body["matched"] == 2
+    assert body["results"][0]["name"] == "Cellular tumor antigen p53"
+
+
+def test_translate_proteins_endpoint_validates_empty(client):
+    r = client.post("/translate/proteins", json={"ids": []})
+    assert r.status_code == 422  # min_length=1
+
+
+def test_translate_proteins_endpoint_upstream_failure_is_502(client, monkeypatch):
+    from adgencov import bioquery
+
+    def boom(ids, **kw):
+        raise bioquery.BioQueryError("UniProt down")
+
+    monkeypatch.setattr(bioquery, "translate_protein_ids", boom)
+    r = client.post("/translate/proteins", json={"ids": ["P04637"]})
+    assert r.status_code == 502
+    assert "UniProt down" in r.json()["detail"]

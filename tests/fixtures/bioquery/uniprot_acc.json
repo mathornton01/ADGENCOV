@@ -1,0 +1,239 @@
+{
+ "results": [
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P04637",
+   "uniProtkbId": "P53_HUMAN",
+   "organism": {
+    "scientificName": "Homo sapiens",
+    "commonName": "Human",
+    "taxonId": 9606,
+    "lineage": [
+     "Eukaryota",
+     "Metazoa",
+     "Chordata",
+     "Craniata",
+     "Vertebrata",
+     "Euteleostomi",
+     "Mammalia",
+     "Eutheria",
+     "Euarchontoglires",
+     "Primates",
+     "Haplorrhini",
+     "Catarrhini",
+     "Hominidae",
+     "Homo"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "value": "Cellular tumor antigen p53"
+     }
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "value": "Antigen NY-CO-13"
+      }
+     },
+     {
+      "fullName": {
+       "value": "Phosphoprotein p53"
+      }
+     },
+     {
+      "fullName": {
+       "value": "Tumor suppressor p53"
+      }
+     }
+    ]
+   },
+   "genes": [
+    {
+     "geneName": {
+      "value": "TP53"
+     },
+     "synonyms": [
+      {
+       "value": "P53"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "7157",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI000002ED67"
+   }
+  },
+  {
+   "entryType": "UniProtKB reviewed (Swiss-Prot)",
+   "primaryAccession": "P0DTC2",
+   "uniProtkbId": "SPIKE_SARS2",
+   "organism": {
+    "scientificName": "Severe acute respiratory syndrome coronavirus 2",
+    "commonName": "2019-nCoV",
+    "synonyms": [
+     "SARS-CoV-2"
+    ],
+    "taxonId": 2697049,
+    "lineage": [
+     "Viruses",
+     "Riboviria",
+     "Orthornavirae",
+     "Pisuviricota",
+     "Pisoniviricetes",
+     "Nidovirales",
+     "Cornidovirineae",
+     "Coronaviridae",
+     "Orthocoronavirinae",
+     "Betacoronavirus",
+     "Sarbecovirus",
+     "Betacoronavirus pandemicum"
+    ]
+   },
+   "proteinDescription": {
+    "recommendedName": {
+     "fullName": {
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000255",
+        "source": "HAMAP-Rule",
+        "id": "MF_04099"
+       }
+      ],
+      "value": "Spike glycoprotein"
+     },
+     "shortNames": [
+      {
+       "evidences": [
+        {
+         "evidenceCode": "ECO:0000255",
+         "source": "HAMAP-Rule",
+         "id": "MF_04099"
+        }
+       ],
+       "value": "S glycoprotein"
+      }
+     ]
+    },
+    "alternativeNames": [
+     {
+      "fullName": {
+       "evidences": [
+        {
+         "evidenceCode": "ECO:0000255",
+         "source": "HAMAP-Rule",
+         "id": "MF_04099"
+        }
+       ],
+       "value": "E2"
+      }
+     },
+     {
+      "fullName": {
+       "evidences": [
+        {
+         "evidenceCode": "ECO:0000255",
+         "source": "HAMAP-Rule",
+         "id": "MF_04099"
+        }
+       ],
+       "value": "Peplomer protein"
+      }
+     }
+    ],
+    "contains": [
+     {
+      "recommendedName": {
+       "fullName": {
+        "evidences": [
+         {
+          "evidenceCode": "ECO:0000255",
+          "source": "HAMAP-Rule",
+          "id": "MF_04099"
+         }
+        ],
+        "value": "Spike protein S1"
+       }
+      }
+     },
+     {
+      "recommendedName": {
+       "fullName": {
+        "evidences": [
+         {
+          "evidenceCode": "ECO:0000255",
+          "source": "HAMAP-Rule",
+          "id": "MF_04099"
+         }
+        ],
+        "value": "Spike protein S2"
+       }
+      }
+     },
+     {
+      "recommendedName": {
+       "fullName": {
+        "evidences": [
+         {
+          "evidenceCode": "ECO:0000255",
+          "source": "HAMAP-Rule",
+          "id": "MF_04099"
+         }
+        ],
+        "value": "Spike protein S2'"
+       }
+      }
+     }
+    ],
+    "flag": "Precursor"
+   },
+   "genes": [
+    {
+     "geneName": {
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000255",
+        "source": "HAMAP-Rule",
+        "id": "MF_04099"
+       }
+      ],
+      "value": "S"
+     },
+     "orfNames": [
+      {
+       "value": "2"
+      }
+     ]
+    }
+   ],
+   "uniProtKBCrossReferences": [
+    {
+     "database": "GeneID",
+     "id": "43740568",
+     "properties": [
+      {
+       "key": "Description",
+       "value": "-"
+      }
+     ]
+    }
+   ],
+   "extraAttributes": {
+    "uniParcId": "UPI00131F240A"
+   }
+  }
+ ]
+}

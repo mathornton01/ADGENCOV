@@ -118,6 +118,40 @@ canvas, svg#network { display: block; width: 100%; max-width: 440px; margin: 0 a
   padding: 4px 8px; border-radius: 6px; font-size: 12px;
 }
 
+/* GEO keyword search */
+.geo-search { grid-column: 1 / -1; margin-bottom: 8px; }
+.search-row { display: flex; gap: 8px; align-items: stretch; margin-top: 4px; }
+.search-row input[type=text] { margin-top: 0; }
+button.mini {
+  background: var(--panel-2); color: var(--ink); border: 1px solid var(--accent);
+  border-radius: 6px; padding: 0 16px; cursor: pointer; font-size: 13px; white-space: nowrap;
+}
+button.mini:hover { background: #223148; }
+button.mini:disabled { opacity: .55; cursor: default; }
+.search-results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; }
+.search-results .hit { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.search-results .hit:last-child { border-bottom: none; }
+.search-results .hit:hover { background: #223148; }
+.search-results .hit.selected { background: #12362a; }
+.hit-head { display: flex; gap: 8px; align-items: baseline; }
+.hit-head .acc { color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.hit-head .hit-title { font-size: 13px; color: var(--ink); }
+.hit-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+/* protein id translator */
+.tool textarea {
+  display: block; width: 100%; margin: 4px 0 10px;
+  background: #0d1420; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical;
+}
+.tool-row { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 4px; }
+.tool-row label { margin-bottom: 0; }
+.tool-row select { min-width: 160px; }
+#protein-table a { color: var(--accent); text-decoration: none; }
+#protein-table a:hover { text-decoration: underline; }
+#protein-table tr.unmatched td { color: var(--muted); }
+
 footer {
   display: flex; justify-content: space-between; max-width: 1180px; margin: 0 auto;
   padding: 16px 20px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line);

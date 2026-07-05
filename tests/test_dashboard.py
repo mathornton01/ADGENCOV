@@ -45,9 +45,15 @@ REQUIRED_DOM_IDS = [
     "analyze-form", "accession", "file", "n_genes", "group", "top_fraction",
     "run-btn", "status", "results", "recommendation", "ranking-table",
     "blocks", "heatmap", "heatmap-legend", "network", "version",
+    # discovery tools (Phase E): GEO keyword search + protein id translator
+    "geo-search-term", "geo-search-btn", "geo-search-results",
+    "protein-ids", "protein-source", "protein-btn", "protein-table",
 ]
 # Endpoints the JS must call — keeps the client and the API contract in lockstep.
-REQUIRED_ENDPOINTS = ["/analyze/geo", "/analyze/upload", "/jobs/", "/health"]
+REQUIRED_ENDPOINTS = [
+    "/analyze/geo", "/analyze/upload", "/jobs/", "/health",
+    "/search/geo", "/translate/proteins",
+]
 
 
 @pytest.fixture()

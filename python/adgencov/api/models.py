@@ -101,6 +101,70 @@ class JobList(BaseModel):
     jobs: List[JobSummary]
 
 
+# ---------------------------------------------------------------------------
+# GEO term search (GET /search/geo)
+# ---------------------------------------------------------------------------
+class GeoSearchHitModel(BaseModel):
+    """One GEO series returned by the term search."""
+
+    accession: str
+    title: str = ""
+    summary: str = ""
+    taxon: str = ""
+    n_samples: int = 0
+    gds_type: str = ""
+    platform: str = ""
+    pub_date: str = ""
+    uid: str = ""
+    url: str = ""
+
+
+class GeoSearchResponse(BaseModel):
+    term: str
+    count: int
+    hits: List[GeoSearchHitModel]
+
+
+# ---------------------------------------------------------------------------
+# Protein-id translation (POST /translate/proteins)
+# ---------------------------------------------------------------------------
+class ProteinTranslateRequest(BaseModel):
+    """Body for ``POST /translate/proteins`` — ids plus an optional id space."""
+
+    ids: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Protein/gene identifiers: UniProt accessions, Entrez GeneIDs, or gene symbols.",
+        examples=[["P04637", "7157", "TP53"]],
+    )
+    source: str = Field(
+        "auto",
+        description="Id space: auto (detect per id), uniprot, geneid, or gene.",
+    )
+    reviewed_only: bool = Field(
+        True,
+        description="Restrict GeneID/symbol lookups to reviewed (Swiss-Prot) entries.",
+    )
+
+
+class ProteinNameModel(BaseModel):
+    query: str
+    matched: bool = False
+    name: str = ""
+    gene: str = ""
+    organism: str = ""
+    accession: str = ""
+    source: str = ""
+    url: str = ""
+
+
+class ProteinTranslateResponse(BaseModel):
+    count: int
+    matched: int
+    results: List[ProteinNameModel]
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "adgencov"
