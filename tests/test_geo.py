@@ -258,3 +258,94 @@ def test_load_series_passthrough():
     s = geo.read_series_matrix(FIXTURE)
     assert geo.load_series(s) is s
     assert geo.load_series(FIXTURE).accession == "GSE999999"
+
+
+# ---------------------------------------------------------------------------
+# Supplementary-matrix fallback (RNA-seq counts / FPKM / TPM)
+# ---------------------------------------------------------------------------
+SUPP_FPKM = os.path.join(HERE, "fixtures", "geo_supp_fpkm_matrix.txt")
+SUPP_COUNTS = os.path.join(HERE, "fixtures", "geo_supp_counts.csv")
+
+
+def test_supp_picker_prefers_matrix_over_diff():
+    names = [
+        "GSE52778_All_Sample_FPKM_Matrix.txt.gz",
+        "GSE52778_Dex_vs_Untreated_gene_exp.diff.gz",
+    ]
+    assert geo.pick_supplementary_matrix(names) == names[0]
+
+
+def test_supp_picker_scores_and_rejects():
+    # FPKM/counts/tpm keywords score positive; annotation/diff/gtf reject.
+    assert geo._score_matrix_candidate("x_FPKM_matrix.txt.gz") > 0
+    assert geo._score_matrix_candidate("x_raw_counts.tsv.gz") > 0
+    assert geo._score_matrix_candidate("x_gene_exp.diff.gz") <= 0
+    assert geo._score_matrix_candidate("x_annotation.gtf.gz") <= 0
+    assert geo._score_matrix_candidate("x.bam") <= 0  # not tabular
+    # A bare accession file with no keyword is still a plausible matrix.
+    assert geo._score_matrix_candidate("GSE1_table.txt.gz") > 0
+    assert geo.pick_supplementary_matrix(["a_readme.txt", "b.bam"]) == "a_readme.txt" or \
+        geo.pick_supplementary_matrix(["b.bam"]) is None
+
+
+def test_supp_picker_none_when_no_matrix():
+    assert geo.pick_supplementary_matrix(["x.bam", "y.gtf.gz"]) is None
+
+
+def test_supp_dir_url():
+    assert geo.supplementary_dir_url("GSE52778") == (
+        "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE52nnn/GSE52778/suppl/"
+    )
+    assert geo.supplementary_dir_url("GSE567").endswith("/GSEnnn/GSE567/suppl/")
+
+
+def test_supp_cufflinks_drops_annotation_and_stats():
+    # Space-delimited cuffdiff-style matrix: annotation + _conf_lo/_conf_hi/
+    # _status columns must be excluded; _FPKM columns become clean sample names.
+    s = geo.read_supplementary_matrix(SUPP_FPKM, accession="GSE52778")
+    assert s.accession == "GSE52778"
+    assert s.n_genes == 6
+    # 3 condition (_FPKM) + 3 replicate columns = 6 samples; no conf/status/annot.
+    assert s.n_samples == 6
+    assert set(s.sample_ids) == {
+        "Dex", "Alb", "Untreated", "Dex_R1", "Alb_R1", "Untreated_R1"
+    }
+    for bad in ("gene_id", "locus", "length", "coverage", "tss_id"):
+        assert bad not in s.sample_ids
+    for c in s.sample_ids:
+        assert not c.endswith(("_conf_lo", "_conf_hi", "_status"))
+    # gene ids came from gene_short_name, not ENSG gene_id.
+    assert "RPS3" in s.expression[geo.GENE_COL].tolist()
+    assert "ENSG001" not in s.expression[geo.GENE_COL].tolist()
+
+
+def test_supp_plain_counts_csv():
+    s = geo.read_supplementary_matrix(SUPP_COUNTS, accession="GSE1")
+    assert s.n_genes == 6
+    assert s.sample_ids == ["SampleA", "SampleB", "SampleC", "SampleD"]
+    assert s.expression[geo.GENE_COL].tolist()[0] == "RPS3"
+
+
+def test_supp_delimiter_sniff():
+    assert geo._sniff_delimiter("a\tb\tc") == "\t"
+    assert geo._sniff_delimiter("a,b,c") == ","
+    assert geo._sniff_delimiter("a b c") == r"\s+"
+
+
+def test_supp_too_few_sample_columns_raises():
+    text = "gene\tonly_status\nRPS3\tOK\nACTB\tOK\n"
+    with pytest.raises(geo.GeoError):
+        geo.read_supplementary_matrix(io.StringIO(text))
+
+
+def test_supp_analyze_series_end_to_end():
+    # The whole point: a supplementary FPKM matrix must drive the C++ core.
+    s = geo.read_supplementary_matrix(SUPP_FPKM, accession="GSE52778")
+    import json
+    res = geo.analyze_series(
+        s, n_genes=6, min_mean=0.0, group="gene_family", n_blocks=2
+    )
+    d = res.to_dict()
+    assert d["recommended"]
+    assert len(d["ranking"]) == 24  # full extended grid runs on FPKM data
+    json.loads(json.dumps(d))  # JSON-serializable

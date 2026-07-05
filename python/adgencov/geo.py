@@ -69,6 +69,11 @@ __all__ = [
     "load_series",
     "map_probes_to_genes",
     "analyze_series",
+    "supplementary_dir_url",
+    "list_supplementary_files",
+    "pick_supplementary_matrix",
+    "read_supplementary_matrix",
+    "fetch_supplementary_series",
 ]
 
 GENE_COL = "gene"
@@ -464,6 +469,7 @@ def fetch_series(
     cache_dir: Optional[str] = None,
     force: bool = False,
     timeout: float = 60.0,
+    allow_supplementary: bool = True,
 ) -> GeoSeries:
     """Download (and cache) a series matrix by accession, then parse it.
 
@@ -472,6 +478,19 @@ def fetch_series(
     function here that touches the network — it is *not* exercised by the test
     suite (which parses the committed fixture directly via
     :func:`read_series_matrix`).
+
+    Series-matrix vs. supplementary data
+    ------------------------------------
+    Microarray series (e.g. ``GSE2034``) publish their full expression table
+    *inside* the series matrix between the
+    ``!series_matrix_table_begin/…_end`` markers.  **RNA-seq** series almost
+    never do — their series matrix ships an *empty* table and the actual
+    counts/FPKM/TPM values live in a supplementary file
+    (``…_FPKM_Matrix.txt.gz``, ``…_raw_counts.tsv.gz``, …).  When the series
+    matrix has no data rows and ``allow_supplementary`` is true, we
+    transparently fall back to :func:`fetch_supplementary_series`, which finds
+    and parses the best matrix-shaped supplementary file.  Set
+    ``allow_supplementary=False`` to require an in-matrix table.
     """
     acc = accession.strip().upper()
     cdir = cache_dir or default_cache_dir()
@@ -493,7 +512,370 @@ def fetch_series(
                     pass
             raise GeoError(f"failed to download {acc} from {url}: {exc}") from exc
 
-    return read_series_matrix(dest, accession=acc)
+    try:
+        return read_series_matrix(dest, accession=acc)
+    except GeoError as exc:
+        if not allow_supplementary:
+            raise
+        # Empty in-matrix table (typical for RNA-seq): fall back to the
+        # supplementary FPKM/TPM/counts matrix, carrying series metadata over.
+        try:
+            meta = _series_metadata_only(dest)
+            return fetch_supplementary_series(
+                acc,
+                cache_dir=cdir,
+                force=force,
+                timeout=timeout,
+                series_metadata=meta,
+            )
+        except GeoError as exc2:
+            raise GeoError(
+                f"{acc}: series matrix carries no expression table and no usable "
+                f"supplementary matrix was found ({exc2})"
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Supplementary-file fallback (RNA-seq counts / FPKM / TPM matrices)
+# ---------------------------------------------------------------------------
+# Columns we never treat as samples: structural annotation emitted by the
+# common RNA-seq quantifiers (Cufflinks/cuffdiff, featureCounts, salmon, …).
+_ANNOT_NAME_DENY = frozenset(
+    {
+        "gene_id", "geneid", "gene", "gene_short_name", "gene_symbol",
+        "gene_name", "genename", "symbol", "tracking_id", "transcript_id",
+        "transcript", "tx_id", "ensembl", "ensembl_gene_id", "entrez",
+        "entrezid", "refseq", "id", "id_ref", "name", "probe", "probe_id",
+        "class_code", "nearest_ref_id", "tss_id", "locus", "length",
+        "coverage", "chr", "chrom", "chromosome", "start", "end", "strand",
+        "width", "biotype", "gene_biotype", "description", "geneid_version",
+    }
+)
+# Column-name suffixes that mark per-sample *statistics*, not expression.
+_ANNOT_SUFFIX_DENY = (
+    "_conf_lo", "_conf_hi", "_status", "_stat", "_pval", "_p_value",
+    "_pvalue", "_qval", "_q_value", "_padj", "_fdr", "_log2fc",
+    "_log2foldchange", "_foldchange", "_fold_change", "_test_stat",
+    "_stderr", "_se", "_ci_lo", "_ci_hi", "_lo", "_hi",
+)
+# Preferred gene-identifier column names, in priority order.
+_GENE_COL_PRIORITY = (
+    "gene_short_name", "gene_symbol", "gene_name", "symbol", "gene",
+    "gene_id", "geneid", "ensembl_gene_id", "tracking_id", "transcript_id",
+    "id_ref", "id", "name", "probe_id", "probe",
+)
+# File-name keywords that flag a matrix-shaped supplementary file, scored high.
+_MATRIX_KEYWORDS = (
+    ("fpkm", 6), ("tpm", 6), ("rpkm", 6), ("cpm", 5), ("counts", 5),
+    ("count", 4), ("matrix", 4), ("expression", 4), ("abundance", 3),
+    ("normalized", 2), ("norm", 1), ("genes", 1),
+)
+# File-name keywords that flag a *non*-matrix file (differential results, etc.).
+_MATRIX_ANTIKEYWORDS = (
+    "diff", "de_results", "deseq", "results", "annotation", "annot",
+    "readme", "filelist", "metadata", "meta", "sample_info", "design",
+    "gtf", "gff", "bed", "fasta", "supplementary_methods",
+)
+_TABULAR_EXTS = (
+    ".txt.gz", ".tsv.gz", ".csv.gz", ".tab.gz", ".txt", ".tsv", ".csv", ".tab",
+)
+
+
+def supplementary_dir_url(accession: str) -> str:
+    """Return the NCBI ``suppl/`` directory URL for a series accession."""
+    acc = accession.strip().upper()
+    if not _ACCESSION_RE.match(acc):
+        raise GeoError(f"not a GSE accession: {accession!r}")
+    digits = acc[3:]
+    stub = ("GSE" + digits[:-3] + "nnn") if len(digits) > 3 else "GSEnnn"
+    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{acc}/suppl/"
+
+
+def list_supplementary_files(accession: str, *, timeout: float = 60.0) -> List[str]:
+    """List supplementary file names published under a series' ``suppl/`` dir."""
+    url = supplementary_dir_url(accession)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        raise GeoError(f"failed to list supplementary files at {url}: {exc}") from exc
+    names: List[str] = []
+    for m in re.finditer(r'href="([^"]+)"', html):
+        href = m.group(1)
+        # Skip parent-dir links, absolute URLs, and query links.
+        if href.startswith(("/", "?", "http://", "https://")) or href in ("../",):
+            continue
+        name = href.rstrip("/")
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _score_matrix_candidate(name: str) -> int:
+    """Score a supplementary file name as a probable expression matrix.
+
+    Higher is better; a non-positive score means "not a matrix file".
+    """
+    low = name.lower()
+    if not low.endswith(_TABULAR_EXTS):
+        return -100
+    if any(bad in low for bad in _MATRIX_ANTIKEYWORDS):
+        return -50
+    score = 0
+    for kw, weight in _MATRIX_KEYWORDS:
+        if kw in low:
+            score += weight
+    # A bare "<acc>_something.txt.gz" with no keyword is still a plausible
+    # matrix — give it a small floor so it beats clearly-annotation files.
+    return score if score > 0 else 1
+
+
+def pick_supplementary_matrix(names: Sequence[str]) -> Optional[str]:
+    """Choose the most matrix-like supplementary file name, or ``None``."""
+    ranked = sorted(
+        ((n for n in names)),
+        key=lambda n: (_score_matrix_candidate(n), -len(n)),
+        reverse=True,
+    )
+    for n in ranked:
+        if _score_matrix_candidate(n) > 0:
+            return n
+    return None
+
+
+def _sniff_delimiter(sample_line: str) -> str:
+    """Guess the field delimiter of a header line (tab, comma, or whitespace)."""
+    if "\t" in sample_line:
+        return "\t"
+    if "," in sample_line and sample_line.count(",") >= 2:
+        return ","
+    return r"\s+"
+
+
+def _mostly_numeric(values: Sequence[str], *, sample: int = 64) -> bool:
+    """True if most of the first *sample* non-empty values parse as floats."""
+    seen = ok = 0
+    for v in values:
+        s = str(v).strip()
+        if s == "":
+            continue
+        seen += 1
+        try:
+            float(s)
+            ok += 1
+        except ValueError:
+            pass
+        if seen >= sample:
+            break
+    return seen > 0 and (ok / seen) >= 0.8
+
+
+def read_supplementary_matrix(
+    source: Union[str, os.PathLike, io.IOBase],
+    *,
+    accession: Optional[str] = None,
+    series_metadata: Optional[Dict[str, Any]] = None,
+) -> GeoSeries:
+    """Parse a supplementary expression matrix (counts / FPKM / TPM) offline.
+
+    Handles the two shapes seen in the wild:
+
+    * **Plain matrix** — a gene-id column plus one numeric column per sample
+      (``gene\\tS1\\tS2 …``).  Every numeric, non-annotation column is a sample.
+    * **Quantifier output** (Cufflinks/cuffdiff ``*_FPKM_Matrix``) — a block of
+      annotation columns (``gene_id``, ``locus``, ``length`` …) followed by
+      per-sample value columns interleaved with ``*_conf_lo``/``*_conf_hi``/
+      ``*_status`` statistics.  The statistics and annotation are dropped; the
+      remaining numeric columns (``Dex_FPKM``, ``Dex_LL14`` …) become samples.
+
+    The delimiter (tab, comma, or run-of-spaces) is sniffed from the header.
+    """
+    src_path = None if hasattr(source, "read") else os.fspath(source)
+    fh = _open_text(source)
+    try:
+        text = fh.read()
+    finally:
+        if not hasattr(source, "read"):
+            fh.close()
+
+    header_line = next(
+        (ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")),
+        "",
+    )
+    if not header_line:
+        raise GeoError("supplementary matrix is empty")
+    sep = _sniff_delimiter(header_line)
+
+    df = pd.read_csv(
+        io.StringIO(text),
+        sep=sep,
+        engine="python",
+        comment="#",
+        dtype=str,
+        keep_default_na=False,
+    )
+    if df.shape[1] < 2:
+        raise GeoError("supplementary file does not look like a matrix (<2 columns)")
+
+    cols = [str(c) for c in df.columns]
+    df.columns = cols
+    low = {c: c.strip().lower() for c in cols}
+
+    # --- gene-id column -----------------------------------------------------
+    gene_col = None
+    for cand in _GENE_COL_PRIORITY:
+        for c in cols:
+            if low[c] == cand:
+                gene_col = c
+                break
+        if gene_col is not None:
+            break
+    if gene_col is None:
+        # Fall back to the first non-numeric column, else the first column.
+        gene_col = next(
+            (c for c in cols if not _mostly_numeric(df[c].tolist())), cols[0]
+        )
+
+    # --- sample / value columns --------------------------------------------
+    value_cols: List[str] = []
+    for c in cols:
+        if c == gene_col:
+            continue
+        name = low[c]
+        if name in _ANNOT_NAME_DENY:
+            continue
+        if name.endswith(_ANNOT_SUFFIX_DENY):
+            continue
+        if not _mostly_numeric(df[c].tolist()):
+            continue
+        value_cols.append(c)
+
+    if len(value_cols) < 2:
+        raise GeoError(
+            "supplementary matrix has fewer than 2 usable sample columns "
+            f"(gene column {gene_col!r}; found {len(value_cols)})"
+        )
+
+    # Derive clean sample names: strip a trailing _FPKM/_TPM/_RPKM/_CPM tag so
+    # cuffdiff's "Dex_FPKM" reads as sample "Dex"; de-duplicate collisions.
+    def _clean(name: str) -> str:
+        n = name
+        for tag in ("_fpkm", "_tpm", "_rpkm", "_cpm", "_counts", "_count"):
+            if n.lower().endswith(tag):
+                return n[: -len(tag)]
+        return n
+
+    genes = df[gene_col].astype(str).map(lambda s: s.strip())
+    data: Dict[str, List[float]] = {}
+    used: Dict[str, int] = {}
+    for c in value_cols:
+        base = _clean(c) or c
+        if base in used:
+            used[base] += 1
+            base = f"{base}.{used[base]}"
+        else:
+            used[base] = 0
+        data[base] = [_to_float(v) for v in df[c].tolist()]
+
+    expr = pd.DataFrame(data)
+    expr.insert(0, GENE_COL, genes.values)
+    expr = expr[expr[GENE_COL].astype(str).str.strip() != ""].reset_index(drop=True)
+    if expr.empty:
+        raise GeoError("supplementary matrix had no rows with a gene id")
+
+    meta = dict(series_metadata or {})
+    meta.setdefault("source", "supplementary")
+    acc = (
+        accession
+        or _first(meta.get("geo_accession"))
+        or _accession_from_path(src_path)
+        or "<local>"
+    )
+    platform = _first(meta.get("platform_id"))
+    return GeoSeries(
+        accession=acc,
+        expression=expr,
+        samples=pd.DataFrame(),
+        metadata=meta,
+        platform=platform,
+        source_path=src_path,
+    )
+
+
+def fetch_supplementary_series(
+    accession: str,
+    *,
+    cache_dir: Optional[str] = None,
+    force: bool = False,
+    timeout: float = 60.0,
+    series_metadata: Optional[Dict[str, Any]] = None,
+) -> GeoSeries:
+    """Find, download, and parse the best supplementary matrix for a series."""
+    acc = accession.strip().upper()
+    names = list_supplementary_files(acc, timeout=timeout)
+    if not names:
+        raise GeoError(f"{acc}: no supplementary files published")
+    choice = pick_supplementary_matrix(names)
+    if choice is None:
+        raise GeoError(
+            f"{acc}: no matrix-shaped supplementary file among {names!r}"
+        )
+
+    cdir = cache_dir or default_cache_dir()
+    os.makedirs(cdir, exist_ok=True)
+    dest = os.path.join(cdir, f"{acc}__{choice}")
+    if force or not os.path.exists(dest) or os.path.getsize(dest) == 0:
+        url = supplementary_dir_url(acc) + choice
+        tmp = dest + ".part"
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp, open(tmp, "wb") as out:
+                out.write(resp.read())
+            os.replace(tmp, dest)
+        except Exception as exc:  # noqa: BLE001
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            raise GeoError(f"failed to download {url}: {exc}") from exc
+
+    meta = dict(series_metadata or {})
+    meta["supplementary_file"] = choice
+    meta["source"] = "supplementary"
+    return read_supplementary_matrix(dest, accession=acc, series_metadata=meta)
+
+
+def _series_metadata_only(path: str) -> Dict[str, Any]:
+    """Scan just the ``!Series_*`` header of a series matrix for metadata.
+
+    Cheap best-effort so a supplementary-backed series still carries its title,
+    summary, and platform even though its in-matrix table was empty.
+    """
+    meta: Dict[str, Any] = {}
+    try:
+        fh = _open_text(path)
+    except OSError:
+        return meta
+    try:
+        for raw in fh:
+            line = raw.rstrip("\n").rstrip("\r")
+            if not line or line.startswith("!series_matrix_table_"):
+                continue
+            if line.startswith("!Series_"):
+                key, _, rest = line.partition("\t")
+                field_name = key[len("!Series_"):].strip()
+                vals = [_strip_quotes(t) for t in rest.split("\t")] if rest else []
+                _accumulate(meta, field_name, vals)
+            elif line.startswith(("ID_REF", "!Sample_")):
+                # Reached the sample block / table header — metadata is done.
+                if line.startswith("ID_REF"):
+                    break
+    finally:
+        fh.close()
+    return {
+        k: (v[0] if isinstance(v, list) and len(v) == 1 else v)
+        for k, v in meta.items()
+    }
 
 
 def load_series(
