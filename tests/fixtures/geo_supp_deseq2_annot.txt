@@ -1,0 +1,7 @@
+gene_id	gene_name	description	length	QDT_T1_count	QDT_T2_count	QDT_T3_count	QDT_C1_count	QDT_C2_count	QDT_C3_count	QDT_T1_tpm	QDT_T2_tpm	QDT_T3_tpm	QDT_C1_tpm	QDT_C2_tpm	QDT_C3_tpm	QDT_tpm	Ctrl_tpm	fc	log2fc	pvalue	padjust	significant	regulate	swissprot	entrez
+ENSG00000255404		novel transcript	1044	0	0	0	7	7	18	0	0	0	0.61	0.63	1.54	0	0.93	0.0154	-6.02	4.1e-05	0.00019	yes	down
+ENSG00000162039	MEIOB	meiosis specific	1867	0	0	0	6	11	8	0	0	0	0.41	0.44	0.33	0	0.39	0.0213	-5.55	0.00031	0.0012	yes	down	NP_001157032	254528
+ENSG00000185681	AKT1	kinase	2400	120	135	128	44	51	39	5.1	5.6	5.3	1.9	2.2	1.7	5.3	1.9	2.8	1.48	0.0004	0.0021	yes	up	P31749	207
+ENSG00000141510	TP53	tumor suppressor	2600	88	92	85	210	198	221	3.2	3.4	3.1	7.8	7.4	8.2	3.2	7.8	0.42	-1.25	0.0009	0.004	yes	down	P04637	7157
+ENSG00000133703	KRAS	gtpase	1900	54	61	58	60	57	63	2.1	2.4	2.3	2.4	2.2	2.5	2.3	2.4	0.98	-0.03	0.61	0.78	no	none	P01116	3845
+ENSG00000171862	PTEN	phosphatase	3200	200	215	208	95	102	88	8.9	9.4	9.1	4.1	4.5	3.8	9.1	4.1	2.15	1.10	0.0002	0.0012	yes	up	P60484	5728

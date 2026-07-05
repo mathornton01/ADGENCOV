@@ -72,6 +72,7 @@ __all__ = [
     "supplementary_dir_url",
     "list_supplementary_files",
     "pick_supplementary_matrix",
+    "rank_supplementary_matrices",
     "read_supplementary_matrix",
     "fetch_supplementary_series",
 ]
@@ -549,6 +550,14 @@ _ANNOT_NAME_DENY = frozenset(
         "class_code", "nearest_ref_id", "tss_id", "locus", "length",
         "coverage", "chr", "chrom", "chromosome", "start", "end", "strand",
         "width", "biotype", "gene_biotype", "description", "geneid_version",
+        # Differential-expression statistic columns emitted un-suffixed by
+        # DESeq2/edgeR/limma-style annotated tables (matched by exact name so a
+        # real sample can't be caught): fold-changes, p-values, flags, etc.
+        "fc", "logfc", "log2fc", "log2foldchange", "foldchange", "fold_change",
+        "pvalue", "p_value", "pval", "padj", "padjust", "padj_value",
+        "qvalue", "qval", "fdr", "significant", "regulate", "regulation",
+        "basemean", "base_mean", "lfcse", "stat", "tstat", "t_stat",
+        "zscore", "z_score", "dispersion", "direction", "updown", "change",
     }
 )
 # Column-name suffixes that mark per-sample *statistics*, not expression.
@@ -557,6 +566,13 @@ _ANNOT_SUFFIX_DENY = (
     "_pvalue", "_qval", "_q_value", "_padj", "_fdr", "_log2fc",
     "_log2foldchange", "_foldchange", "_fold_change", "_test_stat",
     "_stderr", "_se", "_ci_lo", "_ci_hi", "_lo", "_hi",
+)
+# Per-sample expression-unit suffixes, in preference order (raw counts first,
+# then normalized units).  A column ending in one of these is a real sample
+# measurement; used both to isolate sample columns in annotated tables and to
+# strip the unit tag from the derived sample name.
+_EXPRESSION_SUFFIXES = (
+    "_count", "_counts", "_fpkm", "_rpkm", "_cpm", "_tpm",
 )
 # Preferred gene-identifier column names, in priority order.
 _GENE_COL_PRIORITY = (
@@ -570,11 +586,21 @@ _MATRIX_KEYWORDS = (
     ("count", 4), ("matrix", 4), ("expression", 4), ("abundance", 3),
     ("normalized", 2), ("norm", 1), ("genes", 1),
 )
-# File-name keywords that flag a *non*-matrix file (differential results, etc.).
-_MATRIX_ANTIKEYWORDS = (
-    "diff", "de_results", "deseq", "results", "annotation", "annot",
-    "readme", "filelist", "metadata", "meta", "sample_info", "design",
-    "gtf", "gff", "bed", "fasta", "supplementary_methods",
+# File-name keywords that make a file *structurally* impossible as an expression
+# matrix — sequence/annotation/prose formats.  These hard-disqualify a name.
+_MATRIX_HARD_DENY = (
+    "readme", "filelist", "file_list", "metadata", "sample_info",
+    "design", "gtf", "gff", "bed", "fasta", "fastq",
+    "supplementary_methods", "annotation.gtf", "annotation.gff",
+)
+# File-name keywords that *suggest* a differential-expression / annotated table
+# rather than a bare matrix — BUT such files (DESeq2 results, cuffdiff, annotated
+# quantification) very often still embed a per-sample count/TPM/FPKM matrix
+# alongside the statistics.  So these only *penalize* the name; they no longer
+# disqualify it.  Content-based validation (see ``fetch_supplementary_series``)
+# is the final arbiter — we try to actually parse a matrix out of the file.
+_MATRIX_SOFT_DENY = (
+    "diff", "de_results", "deseq", "deg", "results", "annot", "meta",
 )
 _TABULAR_EXTS = (
     ".txt.gz", ".tsv.gz", ".csv.gz", ".tab.gz", ".txt", ".tsv", ".csv", ".tab",
@@ -614,33 +640,49 @@ def list_supplementary_files(accession: str, *, timeout: float = 60.0) -> List[s
 def _score_matrix_candidate(name: str) -> int:
     """Score a supplementary file name as a probable expression matrix.
 
-    Higher is better; a non-positive score means "not a matrix file".
+    Higher is better.  A score of ``-100`` means "structurally impossible"
+    (non-tabular extension or a hard-deny format) and is never worth opening;
+    any other score is a *plausible* candidate that content validation can
+    confirm or reject.  Differential-expression / annotated tables get a soft
+    penalty but remain candidates, because they routinely embed a per-sample
+    count/TPM/FPKM matrix next to their statistics (e.g. a DESeq2 ``.annot``
+    file with ``*_count`` columns).
     """
     low = name.lower()
     if not low.endswith(_TABULAR_EXTS):
         return -100
-    if any(bad in low for bad in _MATRIX_ANTIKEYWORDS):
-        return -50
+    if any(bad in low for bad in _MATRIX_HARD_DENY):
+        return -100
     score = 0
     for kw, weight in _MATRIX_KEYWORDS:
         if kw in low:
             score += weight
+    for bad in _MATRIX_SOFT_DENY:
+        if bad in low:
+            score -= 3
     # A bare "<acc>_something.txt.gz" with no keyword is still a plausible
     # matrix — give it a small floor so it beats clearly-annotation files.
     return score if score > 0 else 1
 
 
+def rank_supplementary_matrices(names: Sequence[str]) -> List[str]:
+    """Return all plausibly-matrix supplementary names, best candidate first.
+
+    Anything not structurally disqualified (see :func:`_score_matrix_candidate`)
+    is included, so a series whose only file is a differential-expression /
+    annotated table is still offered up for content validation rather than
+    rejected on its name alone.
+    """
+    scored = [(n, _score_matrix_candidate(n)) for n in names]
+    plausible = [(n, s) for n, s in scored if s > -100]
+    plausible.sort(key=lambda ns: (ns[1], -len(ns[0])), reverse=True)
+    return [n for n, _ in plausible]
+
+
 def pick_supplementary_matrix(names: Sequence[str]) -> Optional[str]:
     """Choose the most matrix-like supplementary file name, or ``None``."""
-    ranked = sorted(
-        ((n for n in names)),
-        key=lambda n: (_score_matrix_candidate(n), -len(n)),
-        reverse=True,
-    )
-    for n in ranked:
-        if _score_matrix_candidate(n) > 0:
-            return n
-    return None
+    ranked = rank_supplementary_matrices(names)
+    return ranked[0] if ranked else None
 
 
 def _sniff_delimiter(sample_line: str) -> str:
@@ -721,15 +763,29 @@ def read_supplementary_matrix(
     df.columns = cols
     low = {c: c.strip().lower() for c in cols}
 
+    def _populated(col: str) -> float:
+        vals = df[col].astype(str)
+        n = len(vals)
+        return float((vals.str.strip() != "").sum()) / n if n else 0.0
+
     # --- gene-id column -----------------------------------------------------
+    # Walk the priority list, but skip a candidate that is sparsely populated
+    # (annotated tables often carry a symbol column with blanks for novel/
+    # unnamed features) in favour of a fully-populated id column further down.
     gene_col = None
+    fallback_gene_col = None
     for cand in _GENE_COL_PRIORITY:
         for c in cols:
             if low[c] == cand:
-                gene_col = c
+                if fallback_gene_col is None:
+                    fallback_gene_col = c
+                if _populated(c) >= 0.95:
+                    gene_col = c
                 break
         if gene_col is not None:
             break
+    if gene_col is None:
+        gene_col = fallback_gene_col
     if gene_col is None:
         # Fall back to the first non-numeric column, else the first column.
         gene_col = next(
@@ -737,7 +793,8 @@ def read_supplementary_matrix(
         )
 
     # --- sample / value columns --------------------------------------------
-    value_cols: List[str] = []
+    # First pass: every numeric, non-annotation, non-statistic column.
+    numeric_value_cols: List[str] = []
     for c in cols:
         if c == gene_col:
             continue
@@ -748,7 +805,40 @@ def read_supplementary_matrix(
             continue
         if not _mostly_numeric(df[c].tolist()):
             continue
-        value_cols.append(c)
+        numeric_value_cols.append(c)
+
+    # Split the surviving numeric columns into unit-tagged (grouped by unit)
+    # and bare (un-suffixed) ones.
+    families: Dict[str, List[str]] = {}
+    unsuffixed: List[str] = []
+    for c in numeric_value_cols:
+        for tag in _EXPRESSION_SUFFIXES:
+            if low[c].endswith(tag):
+                families.setdefault(tag, []).append(c)
+                break
+        else:
+            unsuffixed.append(c)
+
+    if families and not unsuffixed:
+        # Every sample column carries an explicit unit tag — the fingerprint of
+        # an annotated quantifier / DESeq2 table that reports the SAME samples in
+        # multiple units (``*_count`` and ``*_tpm``) plus per-condition aggregate
+        # columns.  Trust one unit family (raw counts preferred over normalized)
+        # so samples aren't double-counted and aggregates present in only one
+        # unit fall away.
+        value_cols = None
+        for tag in _EXPRESSION_SUFFIXES:  # priority order: counts first
+            cand = families.get(tag)
+            if cand and len(cand) >= 2:
+                value_cols = cand
+                break
+        if value_cols is None:
+            value_cols = numeric_value_cols
+    else:
+        # Samples are (at least partly) un-suffixed — e.g. cuffdiff's ``Dex_FPKM``
+        # condition means alongside bare ``Dex_R1`` replicates.  Both are real
+        # samples, so trust the full numeric, non-statistic set.
+        value_cols = numeric_value_cols
 
     if len(value_cols) < 2:
         raise GeoError(
@@ -760,7 +850,7 @@ def read_supplementary_matrix(
     # cuffdiff's "Dex_FPKM" reads as sample "Dex"; de-duplicate collisions.
     def _clean(name: str) -> str:
         n = name
-        for tag in ("_fpkm", "_tpm", "_rpkm", "_cpm", "_counts", "_count"):
+        for tag in _EXPRESSION_SUFFIXES:
             if n.lower().endswith(tag):
                 return n[: -len(tag)]
         return n
@@ -815,34 +905,52 @@ def fetch_supplementary_series(
     names = list_supplementary_files(acc, timeout=timeout)
     if not names:
         raise GeoError(f"{acc}: no supplementary files published")
-    choice = pick_supplementary_matrix(names)
-    if choice is None:
+    ranked = rank_supplementary_matrices(names)
+    if not ranked:
         raise GeoError(
             f"{acc}: no matrix-shaped supplementary file among {names!r}"
         )
 
     cdir = cache_dir or default_cache_dir()
     os.makedirs(cdir, exist_ok=True)
-    dest = os.path.join(cdir, f"{acc}__{choice}")
-    if force or not os.path.exists(dest) or os.path.getsize(dest) == 0:
-        url = supplementary_dir_url(acc) + choice
-        tmp = dest + ".part"
-        try:
-            with urllib.request.urlopen(url, timeout=timeout) as resp, open(tmp, "wb") as out:
-                out.write(resp.read())
-            os.replace(tmp, dest)
-        except Exception as exc:  # noqa: BLE001
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-            raise GeoError(f"failed to download {url}: {exc}") from exc
 
-    meta = dict(series_metadata or {})
-    meta["supplementary_file"] = choice
-    meta["source"] = "supplementary"
-    return read_supplementary_matrix(dest, accession=acc, series_metadata=meta)
+    # The file name only *ranks* candidates; content is the arbiter.  Try each
+    # plausible file in order and return the first that yields a real matrix
+    # (≥2 sample columns).  This rescues annotated/differential tables (e.g. a
+    # DESeq2 ``.annot`` file whose ``*_count`` columns are the matrix) that a
+    # name-only filter would discard.
+    errors: List[str] = []
+    for choice in ranked:
+        dest = os.path.join(cdir, f"{acc}__{choice}")
+        if force or not os.path.exists(dest) or os.path.getsize(dest) == 0:
+            url = supplementary_dir_url(acc) + choice
+            tmp = dest + ".part"
+            try:
+                with urllib.request.urlopen(url, timeout=timeout) as resp, open(tmp, "wb") as out:
+                    out.write(resp.read())
+                os.replace(tmp, dest)
+            except Exception as exc:  # noqa: BLE001
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                errors.append(f"{choice}: download failed ({exc})")
+                continue
+
+        meta = dict(series_metadata or {})
+        meta["supplementary_file"] = choice
+        meta["source"] = "supplementary"
+        try:
+            return read_supplementary_matrix(dest, accession=acc, series_metadata=meta)
+        except GeoError as exc:
+            errors.append(f"{choice}: {exc}")
+            continue
+
+    detail = "; ".join(errors) if errors else f"tried {ranked!r}"
+    raise GeoError(
+        f"{acc}: no supplementary file yielded a usable expression matrix ({detail})"
+    )
 
 
 def _series_metadata_only(path: str) -> Dict[str, Any]:

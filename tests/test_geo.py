@@ -265,6 +265,7 @@ def test_load_series_passthrough():
 # ---------------------------------------------------------------------------
 SUPP_FPKM = os.path.join(HERE, "fixtures", "geo_supp_fpkm_matrix.txt")
 SUPP_COUNTS = os.path.join(HERE, "fixtures", "geo_supp_counts.csv")
+SUPP_DESEQ2 = os.path.join(HERE, "fixtures", "geo_supp_deseq2_annot.txt")
 
 
 def test_supp_picker_prefers_matrix_over_diff():
@@ -317,6 +318,44 @@ def test_supp_cufflinks_drops_annotation_and_stats():
     # gene ids came from gene_short_name, not ENSG gene_id.
     assert "RPS3" in s.expression[geo.GENE_COL].tolist()
     assert "ENSG001" not in s.expression[geo.GENE_COL].tolist()
+
+
+def test_supp_deseq2_annot_isolates_count_family():
+    # A DESeq2-style annotated table (shape seen in GSE300090): a gene-id + a
+    # sparse gene_name + rich annotation, then the SAME samples reported twice
+    # (``*_count`` and ``*_tpm``), per-condition aggregates (``QDT_tpm``,
+    # ``Ctrl_tpm``) and un-suffixed statistic columns (fc/log2fc/pvalue/padjust).
+    s = geo.read_supplementary_matrix(SUPP_DESEQ2, accession="GSE300090")
+    assert s.accession == "GSE300090"
+    # Exactly the 6 raw-count replicate columns become samples — counts are
+    # preferred over the redundant tpm unit; aggregates and stats fall away.
+    assert s.n_samples == 6
+    assert set(s.sample_ids) == {
+        "QDT_T1", "QDT_T2", "QDT_T3", "QDT_C1", "QDT_C2", "QDT_C3"
+    }
+    # No unit tags, aggregates, statistics, or annotation leaked in as samples.
+    for bad in ("QDT_tpm", "Ctrl_tpm", "fc", "log2fc", "pvalue", "padjust",
+                "significant", "regulate", "length", "entrez"):
+        assert bad not in s.sample_ids
+    for c in s.sample_ids:
+        assert not c.lower().endswith(("_count", "_tpm"))
+    # gene_name is sparse (blank for the novel transcript) so the fully-populated
+    # gene_id is used instead — every row keeps an identifier.
+    genes = s.expression[geo.GENE_COL].tolist()
+    assert s.n_genes == 6
+    assert genes[0] == "ENSG00000255404"
+    assert "" not in genes
+
+
+def test_deseq2_annot_name_is_ranked_not_rejected():
+    # The name alone (deseq/annot tokens) must no longer disqualify the file —
+    # content validation is what decides.
+    only = ["GSE300090_Control_vs_treated_QDT.deseq2.annot.txt.gz"]
+    assert geo.rank_supplementary_matrices(only) == only
+    assert geo.pick_supplementary_matrix(only) == only[0]
+    # Structural non-matrix formats are still hard-rejected.
+    assert geo.rank_supplementary_matrices(["GSE1_annotation.gtf.gz"]) == []
+    assert geo.pick_supplementary_matrix(["GSE1_RAW.tar"]) is None
 
 
 def test_supp_plain_counts_csv():
