@@ -10,8 +10,8 @@ type: software
 authors:
   - family-names: Thornton
     given-names: Micah A.
-    affiliation: Clearpoint Research LLC
-  # - family-names: Thornton   # second author: add given-names before next release
+  - family-names: Thornton
+    given-names: Mitchell
 license-url: "https://github.com/mathornton01/ADGENCOV/blob/main/LICENSE"
 version: 0.1.0
 date-released: 2026-07-05
