@@ -165,6 +165,60 @@ class ProteinTranslateResponse(BaseModel):
     results: List[ProteinNameModel]
 
 
+# ---------------------------------------------------------------------------
+# Gene id -> symbol translation (POST /translate/symbols)
+# ---------------------------------------------------------------------------
+class SymbolTranslateRequest(BaseModel):
+    """Body for ``POST /translate/symbols`` — gene ids plus an organism."""
+
+    ids: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Gene identifiers: Entrez GeneIDs, Ensembl ids, probe ids, aliases, or symbols.",
+        examples=[["7157", "ENSG00000141510", "TP53"]],
+    )
+    species: str = Field(
+        "human",
+        description="Organism for the lookup: human (default), mouse, rat, or an NCBI taxid.",
+    )
+
+
+class GeneSymbolModel(BaseModel):
+    query: str
+    matched: bool = False
+    symbol: str = ""
+    name: str = ""
+    rna_type: str = ""
+    type_of_gene: str = ""
+    entrez: str = ""
+    ensembl: str = ""
+    taxid: int = 0
+
+
+class SymbolTranslateResponse(BaseModel):
+    count: int
+    matched: int
+    results: List[GeneSymbolModel]
+
+
+# ---------------------------------------------------------------------------
+# STRING interaction search (GET /interactions)
+# ---------------------------------------------------------------------------
+class InteractionModel(BaseModel):
+    query: str
+    partner: str
+    score: float
+    channels: Dict[str, float] = Field(default_factory=dict)
+
+
+class InteractionsResponse(BaseModel):
+    species: int
+    genes: List[str]
+    direct: Optional[float] = None
+    partners: List[InteractionModel]
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "adgencov"

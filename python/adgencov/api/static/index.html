@@ -147,12 +147,26 @@
           <canvas id="heatmap" width="440" height="440"></canvas>
           <div class="legend" id="heatmap-legend"></div>
           <p class="hint" id="heatmap-note"></p>
+          <p class="hint">Click a cell to see the two genes it connects, then search their interactions.</p>
+          <div class="detail hidden" id="cell-detail"></div>
         </div>
 
         <div class="panel">
           <h2>Covariance network <span class="hint" id="edge-count"></span></h2>
+          <div class="net-toolbar">
+            <label class="inline">Organism
+              <select id="species">
+                <option value="human">human</option>
+                <option value="mouse">mouse</option>
+                <option value="rat">rat</option>
+              </select>
+            </label>
+            <span class="hint" id="symbol-status" role="status" aria-live="polite"></span>
+          </div>
           <svg id="network" viewBox="0 0 440 440" role="img" aria-label="Gene covariance network"></svg>
           <div class="tooltip hidden" id="net-tooltip"></div>
+          <p class="hint">Click an edge to inspect the two connected genes / RNAs.</p>
+          <div class="detail hidden" id="edge-detail"></div>
         </div>
       </div>
     </section>

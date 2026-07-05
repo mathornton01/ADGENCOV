@@ -22,6 +22,30 @@
 
   function $(id) { return document.getElementById(id); }
 
+  // -- shared render state -------------------------------------------------
+  // The most recent analysis result + its block ordering + heatmap geometry,
+  // so the edge/cell click handlers and the async symbol relabel can all reach
+  // the same data without re-plumbing it through every function.
+  var LAST = null;            // { result, bo }
+  var HEATMAP = null;         // { perm, p, cell } — pixel→cell mapping for clicks
+  var SYMBOLS = {};           // original gene id -> {symbol, name, rna_type, ...}
+
+  // Display symbol for a gene id (falls back to the raw id until resolved).
+  function displayName(gene) {
+    var s = SYMBOLS[gene];
+    return (s && s.symbol) ? s.symbol : gene;
+  }
+  function geneMeta(gene) { return SYMBOLS[gene] || null; }
+  // Coarse RNA class for node shaping / labels (unknown → protein_coding).
+  function rnaType(gene) {
+    var s = SYMBOLS[gene];
+    if (s && s.rna_type) { return s.rna_type; }
+    // Heuristic fallback before symbols resolve, mirroring the backend.
+    if (/^(hsa-)?(mir|let-?7)/i.test(gene)) { return "miRNA"; }
+    if (/^(snord|snora|scarna)/i.test(gene)) { return "snoRNA"; }
+    return "protein_coding";
+  }
+
   // -- source tabs ---------------------------------------------------------
   var currentSource = "geo";
   function selectSource(src) {
@@ -279,13 +303,47 @@
   // -- render dispatch -----------------------------------------------------
   function render(result) {
     $("results").classList.remove("hidden");
+    SYMBOLS = {};                       // reset relabel state for the new run
+    LAST = { result: result, bo: blockOrder(result.labels) };
     renderRecommendation(result);
     renderRanking(result.ranking);
-    var bo = blockOrder(result.labels);
-    renderBlocks(result, bo);
-    renderHeatmap(result, bo);
-    renderNetwork(result, bo);
+    renderBlocks(result, LAST.bo);
+    renderHeatmap(result, LAST.bo);
+    renderNetwork(result, LAST.bo);
+    // Clear any stale click-detail panels from a previous analysis.
+    hide($("edge-detail")); hide($("cell-detail"));
     $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+    resolveSymbols(result.genes);       // async: relabels once mygene answers
+  }
+
+  function hide(el) { if (el) { el.classList.add("hidden"); el.innerHTML = ""; } }
+
+  // -- gene id -> symbol relabel (async, non-blocking) ---------------------
+  function resolveSymbols(genes) {
+    var status = $("symbol-status");
+    if (!genes || !genes.length) { return; }
+    status.textContent = "Resolving " + genes.length + " gene symbols…";
+    fetch(API + "/translate/symbols", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: genes, species: $("species").value })
+    })
+      .then(function (r) { return r.json().then(function (b) {
+        if (!r.ok) { throw new Error((b && b.detail) || ("HTTP " + r.status)); } return b; }); })
+      .then(function (body) {
+        var results = body.results || [];
+        for (var i = 0; i < results.length; i++) {
+          var s = results[i];
+          if (s.matched) { SYMBOLS[s.query] = s; }
+        }
+        status.textContent = body.matched + " of " + body.count + " symbols resolved.";
+        // Re-render the textual/label surfaces now that symbols are known;
+        // the canvas/svg geometry is unchanged so we only refresh labels.
+        if (LAST) {
+          renderBlocks(LAST.result, LAST.bo);
+          renderNetwork(LAST.result, LAST.bo);
+        }
+      })
+      .catch(function (e) { status.textContent = "symbol lookup failed: " + (e.message || e); });
   }
 
   function renderRecommendation(result) {
@@ -325,7 +383,7 @@
     $("block-count").textContent = "(" + bo.order.length + ")";
     for (var k = 0; k < bo.order.length; k++) {
       var L = bo.order[k];
-      var members = bo.groups[L].map(function (idx) { return result.genes[idx]; });
+      var members = bo.groups[L].map(function (idx) { return displayName(result.genes[idx]); });
       var div = document.createElement("div");
       div.className = "block";
       div.innerHTML =
@@ -345,6 +403,8 @@
 
     var cov = result.covariance;
     if (!cov || !cov.length) {
+      HEATMAP = null;
+      hide($("cell-detail"));
       note.textContent = "Covariance matrix omitted for large gene sets (> payload cap); network view still reflects the top edges.";
       ctx.fillStyle = "#93a1b5";
       ctx.font = "13px sans-serif";
@@ -369,6 +429,8 @@
     var dim = cell * p;
     // Keep the canvas crisp at the drawn size.
     canvas.width = dim; canvas.height = dim;
+    // Remember the pixel→cell mapping so a click can recover (row, col) genes.
+    HEATMAP = { perm: perm, p: p, cell: cell };
     for (var i = 0; i < p; i++) {
       for (var j = 0; j < p; j++) {
         var val = cov[perm[i]][perm[j]];
@@ -433,8 +495,22 @@
     var maxAbs = 1e-12;
     for (var e = 0; e < edges.length; e++) { if (edges[e].abs_covariance > maxAbs) { maxAbs = edges[e].abs_covariance; } }
 
+    // Node degree (from the shown edges) drives which nodes get a text label —
+    // just the top hubs, so the view stays legible like the reference figure.
+    var degree = {};
+    for (var d = 0; d < edges.length; d++) {
+      degree[edges[d].gene_a] = (degree[edges[d].gene_a] || 0) + 1;
+      degree[edges[d].gene_b] = (degree[edges[d].gene_b] || 0) + 1;
+    }
+    var byDeg = result.genes.slice().sort(function (a, b) { return (degree[b] || 0) - (degree[a] || 0); });
+    var labelSet = {};
+    var nLabels = Math.min(12, p);
+    for (var t = 0; t < nLabels; t++) { if (degree[byDeg[t]]) { labelSet[byDeg[t]] = true; } }
+
     var NS = "http://www.w3.org/2000/svg";
-    // edges first (under the nodes)
+    var tip = $("net-tooltip");
+
+    // edges first (under the nodes), each clickable to open the detail panel.
     for (var k = 0; k < edges.length; k++) {
       var ed = edges[k];
       var ia = geneIndex[ed.gene_a], ib = geneIndex[ed.gene_b];
@@ -446,27 +522,163 @@
       line.setAttribute("stroke", ed.covariance >= 0 ? "#e0563b" : "#3b6fe0");
       line.setAttribute("stroke-width", (0.4 + 2.4 * w).toFixed(2));
       line.setAttribute("stroke-opacity", (0.15 + 0.6 * w).toFixed(2));
+      (function (edge, ln) {
+        ln.addEventListener("click", function () { showEdgeDetail(edge); });
+        ln.addEventListener("mouseover", function () { ln.classList.add("hot"); });
+        ln.addEventListener("mouseout", function () { ln.classList.remove("hot"); });
+      })(ed, line);
       svg.appendChild(line);
     }
-    // nodes
-    var tip = $("net-tooltip");
+
+    // nodes — shaped by RNA class (circle=gene, square=miRNA, diamond=snoRNA).
     for (var n = 0; n < p; n++) {
       var g = perm[n];
-      var c = document.createElementNS(NS, "circle");
-      c.setAttribute("cx", pos[g].x.toFixed(1)); c.setAttribute("cy", pos[g].y.toFixed(1));
-      c.setAttribute("r", p > 120 ? 2.2 : 4);
-      c.setAttribute("fill", color[g]);
-      c.setAttribute("data-gene", result.genes[g]);
-      c.setAttribute("data-block", result.labels[g]);
-      c.addEventListener("mousemove", function (ev) {
-        tip.textContent = ev.target.getAttribute("data-gene") + "  ·  block " + ev.target.getAttribute("data-block");
-        tip.style.left = (ev.clientX + 12) + "px";
-        tip.style.top = (ev.clientY + 12) + "px";
-        tip.classList.remove("hidden");
-      });
-      c.addEventListener("mouseout", function () { tip.classList.add("hidden"); });
-      svg.appendChild(c);
+      var gene = result.genes[g];
+      var r = p > 120 ? 2.4 : 4.2;
+      // Hubs render a touch larger, echoing the size-by-degree reference figure.
+      if (labelSet[gene]) { r += 2.2; }
+      var shape = nodeShape(NS, rnaType(gene), pos[g].x, pos[g].y, r, color[g]);
+      shape.setAttribute("class", "node");
+      shape.setAttribute("data-gene", gene);
+      shape.setAttribute("data-block", result.labels[g]);
+      (function (gid) {
+        shape.addEventListener("mousemove", function (ev) {
+          var m = geneMeta(gid);
+          tip.textContent = displayName(gid) +
+            (m && m.rna_type ? "  ·  " + m.rna_type : "") +
+            "  ·  block " + result.labels[geneIndex[gid]];
+          tip.style.left = (ev.clientX + 12) + "px";
+          tip.style.top = (ev.clientY + 12) + "px";
+          tip.classList.remove("hidden");
+        });
+        shape.addEventListener("mouseout", function () { tip.classList.add("hidden"); });
+      })(gene);
+      svg.appendChild(shape);
+
+      if (labelSet[gene]) {
+        var txt = document.createElementNS(NS, "text");
+        txt.setAttribute("class", "node-label");
+        txt.setAttribute("x", (pos[g].x + r + 1).toFixed(1));
+        txt.setAttribute("y", (pos[g].y + 3).toFixed(1));
+        txt.textContent = displayName(gene);
+        svg.appendChild(txt);
+      }
     }
+  }
+
+  // Build an SVG node marker shaped by RNA class, centred at (x, y).
+  function nodeShape(NS, type, x, y, r, fill) {
+    var el;
+    if (type === "miRNA") {
+      el = document.createElementNS(NS, "rect");
+      el.setAttribute("x", (x - r).toFixed(1)); el.setAttribute("y", (y - r).toFixed(1));
+      el.setAttribute("width", (2 * r).toFixed(1)); el.setAttribute("height", (2 * r).toFixed(1));
+      el.setAttribute("rx", "0.8");
+    } else if (type === "snoRNA") {
+      el = document.createElementNS(NS, "polygon");
+      var q = (r * 1.25).toFixed(1);
+      el.setAttribute("points",
+        x + "," + (y - q) + " " + (x + q) + "," + y + " " + x + "," + (+y + +q) + " " + (x - q) + "," + y);
+    } else {
+      el = document.createElementNS(NS, "circle");
+      el.setAttribute("cx", x.toFixed(1)); el.setAttribute("cy", y.toFixed(1));
+      el.setAttribute("r", r.toFixed(1));
+    }
+    el.setAttribute("fill", fill);
+    return el;
+  }
+
+  // -- edge detail (click an edge) -----------------------------------------
+  // Renders one endpoint of an edge/cell: symbol, RNA tag, full name, raw id.
+  function endpointHtml(gene) {
+    var m = geneMeta(gene);
+    var sym = displayName(gene);
+    var name = m && m.name ? m.name : "";
+    var sub = [name, gene !== sym ? gene : ""].filter(function (x) { return x; }).join(" · ");
+    return '<div class="endpoint">' +
+      '<div class="sym">' + esc(sym) +
+        '<span class="rna-tag">' + esc(rnaType(gene)) + "</span></div>" +
+      '<div class="sub">' + esc(sub || "—") + "</div></div>";
+  }
+
+  function showEdgeDetail(ed) {
+    var panel = $("edge-detail");
+    var sign = ed.covariance >= 0 ? "pos" : "neg";
+    panel.innerHTML =
+      '<h3>Edge &middot; covariance <span class="cov ' + sign + '">' + fmt(ed.covariance, 3) + "</span></h3>" +
+      '<div class="pair">' + endpointHtml(ed.gene_a) +
+        '<div class="link">&mdash;</div>' + endpointHtml(ed.gene_b) + "</div>";
+    panel.classList.remove("hidden");
+  }
+
+  // -- heatmap cell detail (click a cell) → STRING interactions ------------
+  function onHeatmapClick(ev) {
+    if (!HEATMAP || !LAST) { return; }
+    var canvas = $("heatmap");
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width) { return; }
+    var scale = canvas.width / rect.width;          // CSS px → canvas px
+    var col = Math.floor((ev.clientX - rect.left) * scale / HEATMAP.cell);
+    var row = Math.floor((ev.clientY - rect.top) * scale / HEATMAP.cell);
+    if (row < 0 || col < 0 || row >= HEATMAP.p || col >= HEATMAP.p) { return; }
+    showCellDetail(HEATMAP.perm[row], HEATMAP.perm[col]);
+  }
+
+  function showCellDetail(gi, gj) {
+    var result = LAST.result;
+    var geneA = result.genes[gi], geneB = result.genes[gj];
+    var cov = result.covariance[gi][gj];
+    var same = gi === gj;
+    var sign = cov >= 0 ? "pos" : "neg";
+    var panel = $("cell-detail");
+    panel.innerHTML =
+      "<h3>" + (same ? "Diagonal &middot; variance " : "Cell &middot; covariance ") +
+        '<span class="cov ' + sign + '">' + fmt(cov, 3) + "</span></h3>" +
+      '<div class="pair">' + endpointHtml(geneA) +
+        (same ? "" : '<div class="link">&mdash;</div>' + endpointHtml(geneB)) + "</div>" +
+      '<button type="button" class="mini" id="cell-string-btn">Search STRING interactions</button>' +
+      '<div class="interactions" id="cell-interactions"></div>';
+    panel.classList.remove("hidden");
+    var genes = same ? [displayName(geneA)] : [displayName(geneA), displayName(geneB)];
+    $("cell-string-btn").addEventListener("click", function () { fetchInteractions(genes); });
+  }
+
+  function fetchInteractions(genes) {
+    var host = $("cell-interactions");
+    var btn = $("cell-string-btn");
+    host.innerHTML = '<p class="hint">Searching STRING-db…</p>';
+    if (btn) { btn.disabled = true; }
+    fetch(API + "/interactions?genes=" + encodeURIComponent(genes.join(",")) +
+          "&species=" + encodeURIComponent($("species").value))
+      .then(function (r) { return r.json().then(function (b) {
+        if (!r.ok) { throw new Error((b && b.detail) || ("HTTP " + r.status)); } return b; }); })
+      .then(function (data) { renderInteractions(host, data); })
+      .catch(function (e) { host.innerHTML = '<p class="status err">' + esc(e.message || String(e)) + "</p>"; })
+      .then(function () { if (btn) { btn.disabled = false; } });
+  }
+
+  function renderInteractions(host, data) {
+    var partners = data.partners || [];
+    if (!partners.length) {
+      host.innerHTML = '<p class="hint">No STRING interactions above the medium-confidence threshold.</p>';
+      return;
+    }
+    var html = "";
+    if (data.direct != null) {
+      html += '<div class="direct">Direct interaction &middot; STRING score ' + fmt(data.direct, 3) + "</div>";
+    }
+    html += "<ul>";
+    for (var i = 0; i < partners.length; i++) {
+      var p = partners[i];
+      var pct = Math.max(0, Math.min(100, Math.round((p.score || 0) * 100)));
+      html +=
+        '<li><span class="pn">' + esc(p.query) + '</span><span class="arrow">&rarr;</span>' +
+        '<span class="pn">' + esc(p.partner) + "</span>" +
+        '<span class="meter"><span style="width:' + pct + '%"></span></span>' +
+        '<span class="sc">' + fmt(p.score, 2) + "</span></li>";
+    }
+    html += "</ul>";
+    host.innerHTML = html;
   }
 
   // -- formatting helpers --------------------------------------------------
@@ -509,6 +721,12 @@
     });
     // Protein id translator
     $("protein-btn").addEventListener("click", runTranslate);
+    // Interactive results: click a heatmap cell; re-resolve on organism change.
+    $("heatmap").addEventListener("click", onHeatmapClick);
+    $("species").addEventListener("change", function () {
+      hide($("edge-detail")); hide($("cell-detail"));
+      if (LAST) { resolveSymbols(LAST.result.genes); }
+    });
     selectSource("geo");
     loadVersion();
   }

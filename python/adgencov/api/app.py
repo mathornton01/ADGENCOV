@@ -35,11 +35,14 @@ from .models import (
     GeoAnalyzeRequest,
     GeoSearchResponse,
     HealthResponse,
+    InteractionsResponse,
     JobDetail,
     JobList,
     JobSummary,
     ProteinTranslateRequest,
     ProteinTranslateResponse,
+    SymbolTranslateRequest,
+    SymbolTranslateResponse,
     UploadParams,
 )
 from .service import run_geo_analysis, run_upload_analysis
@@ -207,6 +210,53 @@ def create_app(
             matched=sum(1 for r in results if r["matched"]),
             results=results,
         )
+
+    # -- gene id -> symbol translation -------------------------------------
+    @app.post("/translate/symbols", response_model=SymbolTranslateResponse, tags=["discover"])
+    def translate_symbols_endpoint(
+        req: SymbolTranslateRequest,
+    ) -> SymbolTranslateResponse:
+        """Batch-resolve gene ids to current official (HGNC) symbols via mygene.info."""
+        from ..bioquery import BioQueryError, translate_gene_symbols
+
+        try:
+            syms = translate_gene_symbols(req.ids, species=req.species)
+        except BioQueryError as exc:
+            raise HTTPException(status_code=502, detail=f"symbol translation failed: {exc}")
+        results = [s.to_dict() for s in syms]
+        return SymbolTranslateResponse(
+            count=len(results),
+            matched=sum(1 for r in results if r["matched"]),
+            results=results,
+        )
+
+    # -- STRING interaction search -----------------------------------------
+    @app.get("/interactions", response_model=InteractionsResponse, tags=["discover"])
+    def interactions_endpoint(
+        genes: str,
+        species: str = "9606",
+        limit: int = 10,
+        required_score: int = 400,
+    ) -> InteractionsResponse:
+        """Look up STRING-db interaction partners for one or two genes.
+
+        *genes* is a comma-separated list (a heatmap cell supplies its row+column
+        gene).  Returns each gene's strongest partners plus the direct pair score.
+        """
+        from ..stringdb import StringError, interactions
+
+        ids = [g.strip() for g in (genes or "").split(",") if g.strip()]
+        if not ids:
+            raise HTTPException(status_code=422, detail="query 'genes' is required")
+        if len(ids) > 2:
+            raise HTTPException(status_code=422, detail="supply at most two genes")
+        try:
+            data = interactions(
+                ids, species=species, limit=limit, required_score=required_score
+            )
+        except StringError as exc:
+            raise HTTPException(status_code=502, detail=f"interaction lookup failed: {exc}")
+        return InteractionsResponse(**data)
 
     # -- jobs ---------------------------------------------------------------
     @app.get("/jobs", response_model=JobList, tags=["jobs"])
