@@ -1,0 +1,18 @@
+{
+  "title": "ADGENCOV: Algebraic-Diversity Genetic Covariance estimation for transcriptomics",
+  "description": "A high-performance C++17 toolkit for estimating gene-gene covariance and precision networks from transcriptomic expression matrices using Algebraic Diversity (AD) symmetry-group projections combined with classical shrinkage estimators. Ships a CLI, a pybind11 Python API, a FastAPI backend, and GEO ingestion.",
+  "upload_type": "software",
+  "creators": [
+    { "name": "Thornton, Micah A." }
+  ],
+  "keywords": [
+    "bioinformatics",
+    "transcriptomics",
+    "covariance estimation",
+    "precision matrix",
+    "gene networks",
+    "algebraic diversity",
+    "shrinkage"
+  ],
+  "access_right": "open"
+}

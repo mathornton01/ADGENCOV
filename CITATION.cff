@@ -9,12 +9,14 @@ abstract: >-
 type: software
 authors:
   - family-names: Thornton
-    given-names: M.
-  - family-names: Thornton
-license: MIT
+    given-names: Micah A.
+    affiliation: Clearpoint Research LLC
+  # - family-names: Thornton   # second author: add given-names before next release
+license-url: "https://github.com/mathornton01/ADGENCOV/blob/main/LICENSE"
 version: 0.1.0
-date-released: 2026-07-04
-repository-code: "https://github.com/USER/adgencov"
+date-released: 2026-07-05
+doi: 10.5281/zenodo.21206068
+repository-code: "https://github.com/mathornton01/ADGENCOV"
 keywords:
   - bioinformatics
   - transcriptomics
@@ -23,4 +25,4 @@ keywords:
   - gene networks
   - algebraic diversity
   - shrinkage
-# doi: 10.5281/zenodo.XXXXXXX   # minted by Zenodo on first tagged release
+# Concept DOI (always resolves to latest version): 10.5281/zenodo.21206067

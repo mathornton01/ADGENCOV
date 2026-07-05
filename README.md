@@ -1,6 +1,7 @@
 # ADGENCOV
 
 [![CI](https://github.com/mathornton01/ADGENCOV/actions/workflows/ci.yml/badge.svg)](https://github.com/mathornton01/ADGENCOV/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21206068.svg)](https://doi.org/10.5281/zenodo.21206068)
 
 Algebraic-Diversity Genetic Covariance estimation for transcriptomics.
 
