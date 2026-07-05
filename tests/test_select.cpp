@@ -175,6 +175,13 @@ TEST_CASE("estimate_covariance dispatches every method to the reference",
               golden_select::est_ad_linear_lw);
   expectClose(estimate_covariance(X, labels, {"ad_oas", {}}),
               golden_select::est_ad_oas);
+  // Symmetry-target ("AD-target") family.
+  expectClose(estimate_covariance(X, labels, {"ad_target_ridge", {{"lam", 0.5}}}),
+              golden_select::est_ad_target_ridge_0p5);
+  expectClose(estimate_covariance(X, labels, {"ad_target_lw", {}}),
+              golden_select::est_ad_target_lw);
+  expectClose(estimate_covariance(X, labels, {"ad_target_oas", {}}),
+              golden_select::est_ad_target_oas);
 }
 
 TEST_CASE("estimate_covariance always returns an SPD matrix", "[select][dispatch]") {
@@ -207,6 +214,9 @@ TEST_CASE("loo_nll matches the prototype for each method", "[select][loo]") {
       {"oas", {}},
       {"ad_linear_lw", {}},
       {"ad_oas", {}},
+      {"ad_target_lw", {}},
+      {"ad_target_oas", {}},
+      {"ad_target_ridge", {{"lam", 0.5}}},
   };
   REQUIRE(specs.size() == golden_select::kLooSigs.size());
   for (std::size_t k = 0; k < specs.size(); ++k) {
@@ -244,8 +254,10 @@ TEST_CASE("loo_nll rejects too-few samples", "[select][loo]") {
 
 TEST_CASE("candidate_grid has the expected shape", "[select][grid]") {
   const auto grid = candidate_grid(5, 6);
-  // 5 ridge + 4 data-driven + 4*(lasso+elastic_net) = 17 candidates.
-  REQUIRE(grid.size() == 17);
+  // 5 ridge + 4 data-driven + 4*(lasso+elastic_net) = 17 projection-first
+  // candidates, plus the AD-target family (ad_target_lw, ad_target_oas, and a
+  // 5-point ad_target_ridge lambda sweep) = 7 more, for 24 total.
+  REQUIRE(grid.size() == 24);
 }
 
 TEST_CASE("recommend_estimator ranking matches the prototype", "[select][recommend]") {
@@ -274,5 +286,58 @@ TEST_CASE("recommend_estimator returns a strictly sorted, finite ranking",
   for (const auto& r : results) {
     REQUIRE(std::isfinite(r.loo_nll));
     REQUIRE(std::isfinite(r.condition_number));
+  }
+}
+
+// --- general-symmetry (PairSymmetry) selection path --------------------------
+
+TEST_CASE("symmetry selection via from_labels matches the labels path",
+          "[select][symmetry]") {
+  const Eigen::MatrixXd X = fixtureX();
+  const auto labels = fixtureLabels();
+  const PairSymmetry sym = pair_symmetry_from_labels(labels);
+
+  // Per-method loo_nll and estimate agree between the two projector bindings.
+  for (const EstimatorSpec spec : {
+           EstimatorSpec{"ad_ridge", {{"alpha", 0.2}}},
+           EstimatorSpec{"ad_oas", {}},
+           EstimatorSpec{"ad_target_ridge", {{"lam", 0.5}}},
+           EstimatorSpec{"ad_target_lw", {}},
+       }) {
+    INFO("spec = " << sig(spec));
+    REQUIRE_THAT(loo_nll(X, sym, spec),
+                 WithinAbs(loo_nll(X, labels, spec), kTol));
+    const Eigen::MatrixXd a = estimate_covariance(X, sym, spec);
+    const Eigen::MatrixXd b = estimate_covariance(X, labels, spec);
+    REQUIRE((a - b).cwiseAbs().maxCoeff() <= kTol);
+  }
+
+  // The full recommendation is identical (same methods, same order, same NLL).
+  const auto rs = recommend_estimator(X, sym);
+  const auto rl = recommend_estimator(X, labels);
+  REQUIRE(rs.size() == rl.size());
+  for (std::size_t k = 0; k < rs.size(); ++k) {
+    REQUIRE(sig(rs[k].spec) == sig(rl[k].spec));
+    REQUIRE_THAT(rs[k].loo_nll, WithinAbs(rl[k].loo_nll, kTol));
+  }
+}
+
+TEST_CASE("a general (cyclic) group produces a valid ranking",
+          "[select][symmetry]") {
+  const Eigen::MatrixXd X = fixtureX();
+  const int p = static_cast<int>(X.cols());
+  std::vector<int> shift(p);
+  for (int i = 0; i < p; ++i) shift[i] = (i + 1) % p;
+  const PairSymmetry sym = pair_symmetry_from_generators(p, {shift});
+
+  const auto results = recommend_estimator(X, sym);
+  REQUIRE(!results.empty());
+  for (std::size_t k = 1; k < results.size(); ++k)
+    REQUIRE(results[k - 1].loo_nll <= results[k].loo_nll);
+  for (const auto& r : results) {
+    REQUIRE(std::isfinite(r.loo_nll));
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(r.covariance);
+    REQUIRE(es.info() == Eigen::Success);
+    REQUIRE(es.eigenvalues().minCoeff() > 0.0);
   }
 }

@@ -115,7 +115,7 @@ def test_upload_flow_matches_service(client):
     )
     assert result["recommended"] == expected["recommended"]
     assert result["genes"] == expected["genes"]
-    assert len(result["ranking"]) == len(expected["ranking"]) == 17
+    assert len(result["ranking"]) == len(expected["ranking"]) == 24
     for got, exp in zip(result["ranking"], expected["ranking"]):
         assert got["method"] == exp["method"]
         assert got["loo_nll"] == pytest.approx(exp["loo_nll"], abs=1e-12)
@@ -171,7 +171,7 @@ def test_geo_flow_reproduces_golden(client):
 
     assert result["recommended"] == GOLDEN_GEO_METHOD
     assert result["ranking"][0]["loo_nll"] == pytest.approx(GOLDEN_GEO_LOO, abs=1e-9)
-    assert len(result["ranking"]) == 17
+    assert len(result["ranking"]) == 24
     assert result["edges"], "expected at least one covariance edge"
     assert result["source"]["kind"] == "geo"
 

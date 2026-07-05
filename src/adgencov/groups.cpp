@@ -178,4 +178,65 @@ std::vector<int> factorize(const std::vector<std::string>& labels) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Generator-based symmetry groups.
+// ---------------------------------------------------------------------------
+
+std::vector<std::vector<int>> cyclic_generators(int p) {
+  if (p < 1) throw std::invalid_argument("cyclic_generators: p must be >= 1");
+  std::vector<int> shift(p);
+  for (int i = 0; i < p; ++i) shift[i] = (i + 1) % p;
+  return {shift};
+}
+
+std::vector<std::vector<int>> reflection_generators(int p) {
+  if (p < 1) throw std::invalid_argument("reflection_generators: p must be >= 1");
+  std::vector<int> rev(p);
+  for (int i = 0; i < p; ++i) rev[i] = p - 1 - i;
+  return {rev};
+}
+
+std::vector<std::vector<int>> dihedral_generators(int p) {
+  if (p < 1) throw std::invalid_argument("dihedral_generators: p must be >= 1");
+  std::vector<int> shift(p), rev(p);
+  for (int i = 0; i < p; ++i) {
+    shift[i] = (i + 1) % p;
+    rev[i] = p - 1 - i;
+  }
+  return {shift, rev};
+}
+
+PairSymmetry build_symmetry(const Dataset& dataset, const std::string& group,
+                            const Table* annotation, const Table* group_map,
+                            int n_blocks,
+                            const std::vector<std::vector<int>>* generators) {
+  const int p = static_cast<int>(dataset.genes.size());
+
+  if (group == "cyclic") {
+    return pair_symmetry_from_generators(p, cyclic_generators(p));
+  }
+  if (group == "dihedral") {
+    return pair_symmetry_from_generators(p, dihedral_generators(p));
+  }
+  if (group == "reflection") {
+    return pair_symmetry_from_generators(p, reflection_generators(p));
+  }
+  if (group == "banded") {
+    return pair_symmetry_banded(p);
+  }
+  if (group == "custom_generators") {
+    if (!generators || generators->empty())
+      throw std::invalid_argument(
+          "adgencov: group 'custom_generators' requires --generators with one "
+          "or more length-p permutations.");
+    return pair_symmetry_from_generators(p, *generators);
+  }
+
+  // Everything else is a partition group: reuse the label pipeline and lift the
+  // resulting block partition to a pair symmetry.
+  const std::vector<int> labels =
+      factorize(build_group_labels(dataset, group, annotation, group_map, n_blocks));
+  return pair_symmetry_from_labels(labels);
+}
+
 }  // namespace adgencov

@@ -16,6 +16,8 @@ import sys
 
 import numpy as np
 
+import adtarget_ref  # shared AD-target reference (same dir on sys.path)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO = os.path.join(
     HERE, "..", "..", "uploads", "ad_extracted",
@@ -76,8 +78,19 @@ loo_specs = [
     ("oas",            {}),
     ("ad_linear_lw",   {}),
     ("ad_oas",         {}),
+    ("ad_target_lw",   {}),
+    ("ad_target_oas",  {}),
+    ("ad_target_ridge", {"lam": 0.5}),
 ]
-loo_vals = [(sig(m, pr), proto.loo_nll(X, labels, m, pr)) for m, pr in loo_specs]
+
+
+def _loo(m, pr):
+    if adtarget_ref.is_ad_target(m):
+        return adtarget_ref.loo_nll(proto, X, labels, m, pr)
+    return proto.loo_nll(X, labels, m, pr)
+
+
+loo_vals = [(sig(m, pr), _loo(m, pr)) for m, pr in loo_specs]
 
 # ---------------------------------------------------------------------------
 # estimate_covariance dispatcher outputs (make_pd'd) for a few methods.
@@ -89,15 +102,26 @@ est_specs = [
     ("est_oas",           "oas",            {}),
     ("est_ad_linear_lw",  "ad_linear_lw",   {}),
     ("est_ad_oas",        "ad_oas",         {}),
+    ("est_ad_target_ridge_0p5", "ad_target_ridge", {"lam": 0.5}),
+    ("est_ad_target_lw",  "ad_target_lw",   {}),
+    ("est_ad_target_oas", "ad_target_oas",  {}),
 ]
-est_mats = [(tag, proto.estimate_covariance(X, labels, m, pr))
-            for tag, m, pr in est_specs]
+
+
+def _est(m, pr):
+    if adtarget_ref.is_ad_target(m):
+        return adtarget_ref.estimate(proto, X, labels, m, pr)
+    return proto.estimate_covariance(X, labels, m, pr)
+
+
+est_mats = [(tag, _est(m, pr)) for tag, m, pr in est_specs]
 
 # ---------------------------------------------------------------------------
-# Full recommend_estimator ranking (sorted by loo_nll ascending).
+# Full recommend_estimator ranking over the EXTENDED grid (prototype grid + the
+# AD-target family), sorted by loo_nll ascending — mirrors candidate_grid().
 # ---------------------------------------------------------------------------
-rec = proto.recommend_estimator(X, labels)
-rec_rows = [(sig(r.name, r.params), r.loo_nll, r.condition_number) for r in rec]
+rec = adtarget_ref.ranked(proto, X, labels)
+rec_rows = [(row[0], row[3], row[4]) for row in rec]  # (sig, loo_nll, cond)
 
 # ---------------------------------------------------------------------------
 # Emit C++ header.

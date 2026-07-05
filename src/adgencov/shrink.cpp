@@ -55,6 +55,14 @@ Eigen::MatrixXd ridge(const Eigen::MatrixXd& S, double alpha) {
   return R;
 }
 
+Eigen::MatrixXd shrink_to_target(const Eigen::MatrixXd& S,
+                                 const Eigen::MatrixXd& target, double lambda) {
+  if (S.rows() != target.rows() || S.cols() != target.cols())
+    throw std::invalid_argument("shrink_to_target: S and target sizes disagree");
+  const double l = std::max(0.0, std::min(1.0, lambda));
+  return (1.0 - l) * S + l * target;
+}
+
 Eigen::MatrixXd soft_threshold_offdiag(const Eigen::MatrixXd& S, double lam,
                                        double l1_ratio) {
   const Eigen::Index p = S.rows();

@@ -38,7 +38,8 @@ GOLDEN_RANK_METHODS = [
     "ad_lasso", "ad_elastic_net", "ad_ridge", "ad_linear_lw", "ad_ridge", "lw",
     "ad_ridge", "ad_lasso", "ad_elastic_net", "ad_ridge", "oas",
     "ad_elastic_net", "ad_oas", "ad_lasso", "ad_ridge", "ad_elastic_net",
-    "ad_lasso",
+    "ad_lasso", "ad_target_ridge", "ad_target_ridge", "ad_target_ridge",
+    "ad_target_ridge", "ad_target_ridge", "ad_target_lw", "ad_target_oas",
 ]
 GOLDEN_RANK_LOO = [
     5.431879976737194, 5.445512535078997, 5.567458167902287, 5.88245424655942,
@@ -46,6 +47,9 @@ GOLDEN_RANK_LOO = [
     6.0689868820392725, 6.167470222511, 6.7715839357397245, 7.1339711623078905,
     7.1833258035724254, 7.189866430400039, 7.243284358622774,
     7.7448291082577905, 15.607186941910562, 15.714630025049743,
+    148.9743431988566, 148.9743431988705, 148.97434319888498,
+    148.97434319890078, 148.97434319890414, 14517.199465270112,
+    14517.199465457044,
 ]
 
 
@@ -214,11 +218,14 @@ def test_analyze_series_reproduces_pipeline_golden():
     # Same recommendation to 1e-9.
     assert result.best.spec.method == GOLDEN_BEST_METHOD
     assert result.best.loo_nll == pytest.approx(GOLDEN_BEST_LOO, abs=1e-9)
-    # The entire 17-candidate ranking matches.
+    # The entire 24-candidate ranking matches.
     methods = [r.spec.method for r in result.ranking]
     loos = [r.loo_nll for r in result.ranking]
     assert methods == GOLDEN_RANK_METHODS
-    assert loos == pytest.approx(GOLDEN_RANK_LOO, abs=1e-9)
+    # Relative tolerance: NLLs span 5 -> 14517 (the AD-target family is heavily
+    # over-regularized on this data and ranks last), so the C++ fast path and the
+    # golden generator agree to ~1e-11 relative, not to a fixed 1e-9 absolute.
+    assert loos == pytest.approx(GOLDEN_RANK_LOO, rel=1e-9, abs=1e-9)
 
 
 def test_analyze_series_accepts_geoseries_and_serializes():
@@ -227,7 +234,7 @@ def test_analyze_series_accepts_geoseries_and_serializes():
     d = result.to_dict()
     assert d["recommended"] == GOLDEN_BEST_METHOD
     assert d["genes"] == GOLDEN_GENES
-    assert len(d["ranking"]) == 17
+    assert len(d["ranking"]) == 24
     assert d["edges"], "expected at least one covariance edge"
     # to_dict must be JSON-serializable for the FastAPI layer (Phase C).
     import json

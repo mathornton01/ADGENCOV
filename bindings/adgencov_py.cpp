@@ -14,6 +14,8 @@
 // prototype ad_covariance_app.py exactly and is parity-tested to ~1e-9 in
 // tests/test_bindings.py.
 
+#include <optional>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
@@ -37,7 +39,10 @@ PYBIND11_MODULE(_core, m) {
   m.attr("__version__") = "0.1.0";
 
   // ---- projection.hpp ----------------------------------------------------
-  m.def("reynolds_project", &reynolds_project, py::arg("S"), py::arg("labels"),
+  m.def("reynolds_project",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&>(
+            &reynolds_project),
+        py::arg("S"), py::arg("labels"),
         R"doc(Project a covariance onto the block-exchangeable commutant.
 
 The Reynolds (group-averaging) projection for independent within-block
@@ -56,6 +61,39 @@ Returns
 (p, p) ndarray
     The symmetric projected covariance.)doc");
 
+  // General orbit-averaging (commutant) projection + the symmetry it needs.
+  py::class_<PairSymmetry>(m, "PairSymmetry",
+                           "A partition of the p*p index pairs into orbits, "
+                           "defining a general Reynolds/commutant projection "
+                           "(P(i,j) = mean of S over the orbit of (i,j)).")
+      .def(py::init<>())
+      .def_readwrite("p", &PairSymmetry::p)
+      .def_readwrite("n_orbits", &PairSymmetry::n_orbits)
+      .def_readwrite("orbit_of", &PairSymmetry::orbit_of)
+      .def("__repr__", [](const PairSymmetry& s) {
+        return "PairSymmetry(p=" + std::to_string(s.p) +
+               ", n_orbits=" + std::to_string(s.n_orbits) + ")";
+      });
+
+  m.def("reynolds_project",
+        py::overload_cast<const Eigen::MatrixXd&, const PairSymmetry&>(
+            &reynolds_project),
+        py::arg("S"), py::arg("sym"),
+        "Project S onto the commutant defined by a PairSymmetry: average S over "
+        "each orbit of index pairs.  Generalises the labels form to any finite "
+        "permutation symmetry (cyclic, dihedral, reflection, banded, custom).");
+  m.def("pair_symmetry_from_labels", &pair_symmetry_from_labels,
+        py::arg("labels"),
+        "Block-exchangeable (Young subgroup) symmetry from per-gene labels; "
+        "reproduces the labels-based reynolds_project up to summation order.");
+  m.def("pair_symmetry_from_generators", &pair_symmetry_from_generators,
+        py::arg("p"), py::arg("generators"),
+        "Symmetry from permutation generators (each a length-p permutation of "
+        "[0,p)); pair orbits are computed by union-find over the generators.");
+  m.def("pair_symmetry_banded", &pair_symmetry_banded, py::arg("p"),
+        "Banded / symmetric-Toeplitz symmetry: pairs sharing |i-j| form one "
+        "orbit (positional-distance structure).");
+
   // ---- shrink.hpp --------------------------------------------------------
   m.def("sample_covariance", &sample_covariance, py::arg("X"),
         py::arg("unbiased") = true,
@@ -68,6 +106,11 @@ Returns
   m.def("soft_threshold_offdiag", &soft_threshold_offdiag, py::arg("S"),
         py::arg("lam"), py::arg("l1_ratio") = 1.0,
         "Soft-threshold off-diagonals (LASSO/elastic-net covariance).");
+  m.def("shrink_to_target", &shrink_to_target, py::arg("S"), py::arg("target"),
+        py::arg("lambda"),
+        "Convex shrinkage toward an explicit target: (1-lambda)*S + lambda*target "
+        "(lambda clamped to [0,1]).  The symmetry-target ('AD-target') op with "
+        "target = the Reynolds projection P_G(S).");
   m.def("ledoit_wolf_shrinkage", &ledoit_wolf_shrinkage, py::arg("X"),
         "Ledoit-Wolf optimal shrinkage intensity in [0,1] (matches scikit-learn).");
   m.def("ledoit_wolf", &ledoit_wolf, py::arg("X"),
@@ -156,10 +199,19 @@ Returns
 
   m.def("candidate_grid", &candidate_grid, py::arg("p"), py::arg("n"),
         "The conservative candidate grid for a (p genes, n samples) problem.");
-  m.def("recommend_estimator", &recommend_estimator, py::arg("X"),
-        py::arg("labels"),
+  m.def("recommend_estimator",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&>(
+            &recommend_estimator),
+        py::arg("X"), py::arg("labels"),
         py::call_guard<py::gil_scoped_release>(),
         "Score the candidate grid and return results sorted by ascending LOO-NLL.");
+  m.def("recommend_estimator",
+        py::overload_cast<const Eigen::MatrixXd&, const PairSymmetry&>(
+            &recommend_estimator),
+        py::arg("X"), py::arg("sym"),
+        py::call_guard<py::gil_scoped_release>(),
+        "General-symmetry overload: score the grid projecting AD variants through "
+        "the commutant of an arbitrary PairSymmetry, sorted ascending by LOO-NLL.");
 
   // ---- clustering.hpp ----------------------------------------------------
   m.def("agglomerative_average", &agglomerative_average, py::arg("dist"),

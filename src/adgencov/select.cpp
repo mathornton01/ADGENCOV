@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
@@ -14,6 +15,12 @@ namespace {
 
 constexpr double kTwoPi = 2.0 * 3.14159265358979323846;
 
+// A projection operator applied to a p-by-p sample covariance.  The block
+// (labels) path and the general-symmetry (PairSymmetry) path differ only in
+// which projector they bind here; all estimator logic below is projector-
+// agnostic, so both paths run identical numerics.
+using ProjectFn = std::function<Eigen::MatrixXd(const Eigen::MatrixXd&)>;
+
 // Fetch a scalar hyper-parameter with a default, matching params.get(key, def).
 double param(const EstimatorSpec& spec, const std::string& key, double def) {
   const auto it = spec.params.find(key);
@@ -25,18 +32,34 @@ bool is_ad(const std::string& method) {
 }
 
 // Whether the method's estimate depends on the raw data matrix X (Ledoit-Wolf /
-// OAS shrinkage intensities), as opposed to only the sample covariance.
+// OAS shrinkage intensities), as opposed to only the sample covariance.  These
+// take the submatrix path in loo_nll; everything else uses the rank-1 downdate.
 bool needs_data_matrix(const std::string& m) {
   return m == "lw" || m == "ledoit_wolf" || m == "oas" ||
-         m == "ad_linear_lw" || m == "ad_oas";
+         m == "ad_linear_lw" || m == "ad_oas" ||
+         m == "ad_target_lw" || m == "ad_target_oas";
 }
 
-// Dispatch the covariance-only estimators given an already-formed (and, for AD
-// variants, already Reynolds-projected) covariance S0.  Returns the make_pd'd
-// estimate, exactly as the prototype's estimate_covariance does.
-Eigen::MatrixXd dispatch_linear(const Eigen::MatrixXd& S0,
-                                const EstimatorSpec& spec) {
+// Dispatch the covariance-only estimators from a raw sample covariance S and a
+// projector.  Projection-first AD variants project S first; the symmetry-target
+// ad_target_ridge shrinks S toward the projected target P_G(S).  Returns the
+// make_pd'd estimate, exactly as the prototype's estimate_covariance does.
+Eigen::MatrixXd dispatch_cov(const Eigen::MatrixXd& S, const ProjectFn& project,
+                             const EstimatorSpec& spec) {
   const std::string& m = spec.method;
+
+  // Symmetry-target: (1-lam) S + lam P_G(S), optional small identity ridge.
+  if (m == "ad_target_ridge") {
+    const Eigen::MatrixXd PG = project(S);
+    Eigen::MatrixXd C = shrink_to_target(S, PG, param(spec, "lam", 0.5));
+    const double diag_alpha = param(spec, "diag_alpha", 1.0e-3);
+    if (diag_alpha > 0.0) C = ridge(C, diag_alpha);
+    return make_pd(C);
+  }
+
+  // Projection-first AD variants share the projected covariance S0; the plain
+  // linear/sparse estimators use S0 = S.
+  const Eigen::MatrixXd S0 = is_ad(m) ? project(S) : S;
   if (m == "sample" || m == "ad_sample") {
     return make_pd(S0);
   }
@@ -53,15 +76,12 @@ Eigen::MatrixXd dispatch_linear(const Eigen::MatrixXd& S0,
   throw std::invalid_argument("estimate_covariance: unknown method '" + m + "'");
 }
 
-}  // namespace
-
-Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
-                                    const std::vector<int>& labels,
-                                    const EstimatorSpec& spec) {
-  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
-    throw std::invalid_argument(
-        "estimate_covariance: labels length must equal number of genes (cols)");
-  }
+// Full estimator dispatch from data X and a projector: the X-dependent
+// shrinkers (Ledoit-Wolf / OAS and their AD / AD-target variants) plus the
+// covariance-only family via dispatch_cov.
+Eigen::MatrixXd estimate_with_projector(const Eigen::MatrixXd& X,
+                                        const ProjectFn& project,
+                                        const EstimatorSpec& spec) {
   const std::string& m = spec.method;
 
   // Data-driven shrinkers computed directly from X.
@@ -73,51 +93,34 @@ Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
   }
 
   const Eigen::MatrixXd S = sample_covariance(X, /*unbiased=*/true);
-  const Eigen::MatrixXd S0 = is_ad(m) ? reynolds_project(S, labels) : S;
 
+  // Projection-first AD shrinkers: project, then ridge by the LW/OAS intensity.
   if (m == "ad_linear_lw") {
-    return make_pd(ridge(S0, ledoit_wolf_shrinkage(X)));
+    return make_pd(ridge(project(S), ledoit_wolf_shrinkage(X)));
   }
   if (m == "ad_oas") {
-    return make_pd(ridge(S0, oas_shrinkage(X)));
+    return make_pd(ridge(project(S), oas_shrinkage(X)));
   }
-  return dispatch_linear(S0, spec);
+
+  // Symmetry-target shrinkers driven by the LW/OAS intensity: shrink S toward
+  // the projected target P_G(S) with strength alpha = LW/OAS(X).
+  if (m == "ad_target_lw" || m == "ad_target_oas") {
+    const double lambda =
+        (m == "ad_target_lw") ? ledoit_wolf_shrinkage(X) : oas_shrinkage(X);
+    Eigen::MatrixXd C = shrink_to_target(S, project(S), lambda);
+    const double diag_alpha = param(spec, "diag_alpha", 0.0);
+    if (diag_alpha > 0.0) C = ridge(C, diag_alpha);
+    return make_pd(C);
+  }
+
+  return dispatch_cov(S, project, spec);
 }
 
-double gaussian_nll_one(const Eigen::VectorXd& x, const Eigen::VectorXd& mu,
-                        const Eigen::MatrixXd& Sigma) {
-  const Eigen::Index p = x.size();
-  // Every Sigma reaching this function has already been make_pd'd by the
-  // estimator dispatch (dispatch_linear / estimate_covariance both return an
-  // SPD, eigenvalue-floored matrix), so the Cholesky succeeds on it directly in
-  // the overwhelmingly common case.  Attempt LLT first and only fall back to the
-  // expensive O(p^3) SPD eigen-projection when the raw matrix is not numerically
-  // positive-definite.  This preserves the prototype's make_pd semantics (any
-  // genuinely indefinite input is still projected) while removing a redundant
-  // full eigendecomposition from every single leave-one-out fold.
-  Eigen::LLT<Eigen::MatrixXd> llt(Sigma);
-  if (llt.info() != Eigen::Success) {
-    llt.compute(make_pd(Sigma));
-    if (llt.info() != Eigen::Success) {
-      return std::numeric_limits<double>::infinity();
-    }
-  }
-  // logdet(Sigma) = 2 * sum(log(diag(L))) with Sigma = L L^T.
-  const Eigen::MatrixXd& L = llt.matrixL();
-  double logdet = 0.0;
-  for (Eigen::Index i = 0; i < p; ++i) {
-    logdet += std::log(L(i, i));
-  }
-  logdet *= 2.0;
-  // q = (x-mu)^T Sigma^{-1} (x-mu) = || L^{-1} (x-mu) ||^2.
-  const Eigen::VectorXd d = x - mu;
-  const Eigen::VectorXd y = L.triangularView<Eigen::Lower>().solve(d);
-  const double q = y.squaredNorm();
-  return 0.5 * (static_cast<double>(p) * std::log(kTwoPi) + logdet + q);
-}
-
-double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
-               const EstimatorSpec& spec) {
+// Leave-one-out CV mean NLL given data X and a projector (see the header for the
+// downdate / submatrix split).  Both public overloads bind `project` and call
+// this, so labels and general-symmetry paths run identical code.
+double loo_with_projector(const Eigen::MatrixXd& X, const ProjectFn& project,
+                          const EstimatorSpec& spec) {
   const Eigen::Index n = X.rows();
   const Eigen::Index p = X.cols();
   if (n < 3) {
@@ -130,16 +133,12 @@ double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
   const Eigen::MatrixXd Xc = X.rowwise() - xbar;
   const Eigen::MatrixXd C = Xc.transpose() * Xc;  // full scatter about full mean
 
-  const std::string& m = spec.method;
-  const bool needs_X = needs_data_matrix(m);
-  const bool ad = is_ad(m);
+  const bool needs_X = needs_data_matrix(spec.method);
 
   double total = 0.0;
   for (Eigen::Index i = 0; i < n; ++i) {
-    // Leave-one-out training mean: (n*xbar - x_i) / (n-1).
     const Eigen::RowVectorXd xi = X.row(i);
-    const Eigen::VectorXd mu_i =
-        ((dn * xbar - xi) / (dn - 1.0)).transpose();
+    const Eigen::VectorXd mu_i = ((dn * xbar - xi) / (dn - 1.0)).transpose();
 
     Eigen::MatrixXd Sigma;
     if (needs_X) {
@@ -147,41 +146,22 @@ double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
       Eigen::MatrixXd Xtr(n - 1, p);
       Xtr.topRows(i) = X.topRows(i);
       Xtr.bottomRows(n - 1 - i) = X.bottomRows(n - 1 - i);
-      Sigma = estimate_covariance(Xtr, labels, spec);
+      Sigma = estimate_with_projector(Xtr, project, spec);
     } else {
       // Exact rank-1 downdate of the scatter about the leave-one-out mean:
-      //   C_i = C - (n/(n-1)) (x_i - xbar)(x_i - xbar)^T,
-      //   S_i = C_i / (n-2)  == np.cov(train, ddof=1).
+      //   C_i = C - (n/(n-1)) (x_i - xbar)(x_i - xbar)^T,  S_i = C_i / (n-2).
       const Eigen::RowVectorXd di = xi - xbar;
-      const Eigen::MatrixXd Ci =
-          C - (dn / (dn - 1.0)) * (di.transpose() * di);
+      const Eigen::MatrixXd Ci = C - (dn / (dn - 1.0)) * (di.transpose() * di);
       const Eigen::MatrixXd S_i = Ci / (dn - 2.0);
-      const Eigen::MatrixXd S0 = ad ? reynolds_project(S_i, labels) : S_i;
-      Sigma = dispatch_linear(S0, spec);
+      Sigma = dispatch_cov(S_i, project, spec);
     }
     total += gaussian_nll_one(xi.transpose(), mu_i, Sigma);
   }
   return total / dn;
 }
 
-std::vector<EstimatorSpec> candidate_grid(int /*p*/, int /*n*/) {
-  std::vector<EstimatorSpec> grid;
-  for (double a : {0.05, 0.1, 0.2, 0.4, 0.7}) {
-    grid.push_back({"ad_ridge", {{"alpha", a}}});
-  }
-  grid.push_back({"ad_linear_lw", {}});
-  grid.push_back({"ad_oas", {}});
-  grid.push_back({"lw", {}});
-  grid.push_back({"oas", {}});
-  for (double lam : {0.01, 0.03, 0.1, 0.3}) {
-    grid.push_back({"ad_lasso", {{"lam", lam}}});
-    grid.push_back({"ad_elastic_net", {{"lam", lam}, {"l1_ratio", 0.25}}});
-  }
-  return grid;
-}
-
-std::vector<EstimatorResult> recommend_estimator(
-    const Eigen::MatrixXd& X, const std::vector<int>& labels) {
+std::vector<EstimatorResult> recommend_with_projector(const Eigen::MatrixXd& X,
+                                                      const ProjectFn& project) {
   const auto grid = candidate_grid(static_cast<int>(X.cols()),
                                    static_cast<int>(X.rows()));
   std::vector<EstimatorResult> results;
@@ -189,8 +169,8 @@ std::vector<EstimatorResult> recommend_estimator(
 
   for (const auto& spec : grid) {
     try {
-      const double score = loo_nll(X, labels, spec);
-      const Eigen::MatrixXd Sigma = estimate_covariance(X, labels, spec);
+      const double score = loo_with_projector(X, project, spec);
+      const Eigen::MatrixXd Sigma = estimate_with_projector(X, project, spec);
       // 2-norm condition number of an SPD matrix = lambda_max / lambda_min.
       Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Sigma);
       double cond = std::numeric_limits<double>::infinity();
@@ -211,6 +191,127 @@ std::vector<EstimatorResult> recommend_estimator(
                      return a.loo_nll < b.loo_nll;
                    });
   return results;
+}
+
+// Bind the block-exchangeable projector for a label vector.
+ProjectFn block_projector(const std::vector<int>& labels) {
+  return [&labels](const Eigen::MatrixXd& S) {
+    return reynolds_project(S, labels);
+  };
+}
+
+// Bind the general-symmetry projector for a pair symmetry.
+ProjectFn symmetry_projector(const PairSymmetry& sym) {
+  return [&sym](const Eigen::MatrixXd& S) { return reynolds_project(S, sym); };
+}
+
+}  // namespace
+
+Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
+                                    const std::vector<int>& labels,
+                                    const EstimatorSpec& spec) {
+  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
+    throw std::invalid_argument(
+        "estimate_covariance: labels length must equal number of genes (cols)");
+  }
+  return estimate_with_projector(X, block_projector(labels), spec);
+}
+
+Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
+                                    const PairSymmetry& sym,
+                                    const EstimatorSpec& spec) {
+  if (sym.p != static_cast<int>(X.cols())) {
+    throw std::invalid_argument(
+        "estimate_covariance: sym.p must equal number of genes (cols)");
+  }
+  return estimate_with_projector(X, symmetry_projector(sym), spec);
+}
+
+double gaussian_nll_one(const Eigen::VectorXd& x, const Eigen::VectorXd& mu,
+                        const Eigen::MatrixXd& Sigma) {
+  const Eigen::Index p = x.size();
+  // Every Sigma reaching this function has already been make_pd'd by the
+  // estimator dispatch, so the Cholesky succeeds directly in the common case.
+  // Attempt LLT first and only fall back to the O(p^3) SPD eigen-projection
+  // when the raw matrix is not numerically positive-definite.
+  Eigen::LLT<Eigen::MatrixXd> llt(Sigma);
+  if (llt.info() != Eigen::Success) {
+    llt.compute(make_pd(Sigma));
+    if (llt.info() != Eigen::Success) {
+      return std::numeric_limits<double>::infinity();
+    }
+  }
+  const Eigen::MatrixXd& L = llt.matrixL();
+  double logdet = 0.0;
+  for (Eigen::Index i = 0; i < p; ++i) {
+    logdet += std::log(L(i, i));
+  }
+  logdet *= 2.0;
+  const Eigen::VectorXd d = x - mu;
+  const Eigen::VectorXd y = L.triangularView<Eigen::Lower>().solve(d);
+  const double q = y.squaredNorm();
+  return 0.5 * (static_cast<double>(p) * std::log(kTwoPi) + logdet + q);
+}
+
+double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
+               const EstimatorSpec& spec) {
+  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
+    throw std::invalid_argument(
+        "loo_nll: labels length must equal number of genes (cols)");
+  }
+  return loo_with_projector(X, block_projector(labels), spec);
+}
+
+double loo_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+               const EstimatorSpec& spec) {
+  if (sym.p != static_cast<int>(X.cols())) {
+    throw std::invalid_argument(
+        "loo_nll: sym.p must equal number of genes (cols)");
+  }
+  return loo_with_projector(X, symmetry_projector(sym), spec);
+}
+
+std::vector<EstimatorSpec> candidate_grid(int /*p*/, int /*n*/) {
+  std::vector<EstimatorSpec> grid;
+  for (double a : {0.05, 0.1, 0.2, 0.4, 0.7}) {
+    grid.push_back({"ad_ridge", {{"alpha", a}}});
+  }
+  grid.push_back({"ad_linear_lw", {}});
+  grid.push_back({"ad_oas", {}});
+  grid.push_back({"lw", {}});
+  grid.push_back({"oas", {}});
+  for (double lam : {0.01, 0.03, 0.1, 0.3}) {
+    grid.push_back({"ad_lasso", {{"lam", lam}}});
+    grid.push_back({"ad_elastic_net", {{"lam", lam}, {"l1_ratio", 0.25}}});
+  }
+  // Symmetry-target ("AD-target") family: shrink toward P_G(S) instead of
+  // projecting onto it.  Added as extra candidates; leave-one-out NLL selects
+  // them only when the softer prior genuinely fits better, so the recommendation
+  // can only improve or tie relative to the projection-first grid.
+  grid.push_back({"ad_target_lw", {}});
+  grid.push_back({"ad_target_oas", {}});
+  for (double lam : {0.1, 0.3, 0.5, 0.7, 0.9}) {
+    grid.push_back({"ad_target_ridge", {{"lam", lam}}});
+  }
+  return grid;
+}
+
+std::vector<EstimatorResult> recommend_estimator(
+    const Eigen::MatrixXd& X, const std::vector<int>& labels) {
+  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
+    throw std::invalid_argument(
+        "recommend_estimator: labels length must equal number of genes (cols)");
+  }
+  return recommend_with_projector(X, block_projector(labels));
+}
+
+std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
+                                                 const PairSymmetry& sym) {
+  if (sym.p != static_cast<int>(X.cols())) {
+    throw std::invalid_argument(
+        "recommend_estimator: sym.p must equal number of genes (cols)");
+  }
+  return recommend_with_projector(X, symmetry_projector(sym));
 }
 
 }  // namespace adgencov

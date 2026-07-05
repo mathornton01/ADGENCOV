@@ -18,6 +18,8 @@ import sys
 import numpy as np
 import pandas as pd
 
+import adtarget_ref  # shared AD-target reference (same dir on sys.path)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO = os.path.join(
     HERE, "..", "..", "uploads", "ad_extracted",
@@ -61,11 +63,14 @@ MIN_MEAN = 0.1
 loaded = proto.load_expression_matrix(FIXTURE, r"_LL[0-9]+", "gene_short_name")
 ds = proto.preprocess(loaded, n_genes=N_GENES, min_mean=MIN_MEAN)
 labels = proto.build_group_labels(ds, "gene_family")
-results = proto.recommend_estimator(ds.X, labels)
+# Extended grid (prototype grid + AD-target family), mirroring candidate_grid().
+# rows: [sig, method, params, loo_nll, condition_number], ascending by loo_nll.
+results = adtarget_ref.ranked(proto, ds.X, labels)
 
 genes = ds.genes
 X = ds.X  # samples x genes, standardized
-best = results[0]
+best_method = results[0][1]
+best_loo = results[0][3]
 
 
 def fmt(x: float) -> str:
@@ -87,13 +92,13 @@ lines.append("inline const std::vector<std::string> kLabels = {" +
 # standardized X, row-major
 flatX = ", ".join(fmt(v) for v in X.flatten(order="C"))
 lines.append("inline const std::vector<double> kX = {" + flatX + "};")
-lines.append(f"inline const std::string kBestMethod = \"{best.name}\";")
-lines.append(f"inline constexpr double kBestLooNll = {fmt(best.loo_nll)};")
+lines.append(f"inline const std::string kBestMethod = \"{best_method}\";")
+lines.append(f"inline constexpr double kBestLooNll = {fmt(best_loo)};")
 # Full ranking for a stronger check.
 lines.append("inline const std::vector<std::string> kRankMethods = {" +
-             ", ".join(f"\"{r.name}\"" for r in results) + "};")
+             ", ".join(f"\"{row[1]}\"" for row in results) + "};")
 lines.append("inline const std::vector<double> kRankLooNll = {" +
-             ", ".join(fmt(r.loo_nll) for r in results) + "};")
+             ", ".join(fmt(row[3]) for row in results) + "};")
 lines.append("}  // namespace golden_pipeline")
 
 OUT = os.path.join(HERE, "golden_pipeline.hpp")
@@ -104,4 +109,4 @@ print(f"Wrote {FIXTURE}")
 print(f"Wrote {OUT}")
 print(f"selected genes: {genes}")
 print(f"labels: {labels}")
-print(f"best: {best.name} loo_nll={best.loo_nll:.6f}")
+print(f"best: {best_method} loo_nll={best_loo:.6f}")

@@ -172,22 +172,42 @@ def test_loo_nll(data, method, params):
 
 
 def test_candidate_grid(data):
+    # The C++ grid extends the frozen prototype's grid with the AD-target family
+    # (ad_target_lw/oas/ridge), which postdates the prototype; adtarget_ref is the
+    # shared reference used by the C++ golden generator too.
+    import adtarget_ref
     grid = _core.candidate_grid(data["p"], data["n"])
-    ref = proto.candidate_grid(data["p"], data["n"])
+    ref = adtarget_ref.extended_grid(proto, data["p"], data["n"])
     assert len(grid) == len(ref)
     for spec, (method, params) in zip(grid, ref):
         assert spec.method == method
         assert dict(spec.params) == pytest.approx(params)
 
 
+def _ref_covariance(X, labels, method, params):
+    """Reference covariance for a candidate: prototype for its own methods,
+    adtarget_ref for the AD-target family."""
+    import adtarget_ref
+    if adtarget_ref.is_ad_target(method):
+        return np.asarray(
+            adtarget_ref.estimate(proto, X, labels, method, params), dtype=float)
+    return np.asarray(
+        proto.estimate_covariance(X, labels, method, params), dtype=float)
+
+
 def test_recommend_estimator_ranking(data):
+    import adtarget_ref
     got = _core.recommend_estimator(data["X"], data["labels_int"])
-    want = proto.recommend_estimator(data["X"], data["labels_str"])
+    # want rows: [sig, method, params, loo_nll, cond] ascending by LOO-NLL.
+    want = adtarget_ref.ranked(proto, data["X"], data["labels_str"])
     # Same set of surviving candidates and same order (ascending LOO-NLL).
-    assert [r.spec.method for r in got] == [r.name for r in want]
+    assert [(r.spec.method, dict(r.spec.params)) for r in got] == \
+           [(w[1], w[2]) for w in want]
     for gr, wr in zip(got, want):
-        assert abs(gr.loo_nll - wr.loo_nll) <= 1e-8, f"{gr.spec.method} loo"
-        assert_close(gr.covariance, wr.covariance, msg=f"{gr.spec.method} cov")
+        assert abs(gr.loo_nll - wr[3]) <= 1e-8, f"{gr.spec.method} loo"
+        ref_cov = _ref_covariance(
+            data["X"], data["labels_str"], wr[1], wr[2])
+        assert_close(gr.covariance, ref_cov, msg=f"{gr.spec.method} cov")
 
 
 # ---------------------------------------------------------------------------
@@ -237,10 +257,11 @@ def test_top_edges_matches_prototype(data):
 
 
 def test_analyze_end_to_end(data):
+    import adtarget_ref
     genes = [f"g{i}" for i in range(data["p"])]
     result = adgencov.analyze(data["X"], data["labels_int"], genes=genes)
-    ref = proto.recommend_estimator(data["X"], data["labels_str"])
-    assert result.best.spec.method == ref[0].name
+    ref = adtarget_ref.ranked(proto, data["X"], data["labels_str"])
+    assert result.best.spec.method == ref[0][1]
     d = result.to_dict()
-    assert d["recommended"] == ref[0].name
+    assert d["recommended"] == ref[0][1]
     assert len(d["ranking"]) == len(ref)

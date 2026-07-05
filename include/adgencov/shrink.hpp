@@ -35,6 +35,16 @@ Eigen::MatrixXd make_pd(const Eigen::MatrixXd& S, double floor = 1e-5);
 /// @param alpha  shrinkage intensity in [0, 1].
 Eigen::MatrixXd ridge(const Eigen::MatrixXd& S, double alpha);
 
+/// Convex shrinkage of @c S toward an explicit @c target matrix:
+///   (1 - lambda) * S + lambda * target.
+/// @c lambda is clamped to [0, 1].  This is the symmetry-target ("AD-target")
+/// operation: with @c target = the Reynolds projection P_G(S) it shrinks the
+/// raw covariance toward the group-structured estimate rather than projecting
+/// onto it hard, letting model selection tune how strongly to trust the prior.
+/// @throws std::invalid_argument if @c S and @c target sizes disagree.
+Eigen::MatrixXd shrink_to_target(const Eigen::MatrixXd& S,
+                                 const Eigen::MatrixXd& target, double lambda);
+
 /// Soft-threshold the off-diagonal entries (LASSO / elastic-net covariance):
 ///   off_ij <- sign(S_ij) * max(|S_ij| - lam * l1_ratio, 0)
 /// with an additional ridge term lam * (1 - l1_ratio) added to the diagonal.

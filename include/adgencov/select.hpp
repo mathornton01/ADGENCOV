@@ -6,6 +6,8 @@
 #include <vector>
 #include <Eigen/Dense>
 
+#include "adgencov/projection.hpp"  // PairSymmetry, reynolds_project
+
 /// @file select.hpp
 /// Estimator recommender and Gaussian likelihood for ADGENCOV.
 ///
@@ -32,8 +34,14 @@ namespace adgencov {
 /// Recognised method names (matching the prototype's estimate_covariance):
 ///   sample, ad_sample, ridge, ad_ridge, lasso, ad_lasso, elastic_net,
 ///   ad_elastic_net, lw / ledoit_wolf, oas, ad_linear_lw, ad_oas.
+///   Symmetry-target ("AD-target") variants, which shrink the raw covariance
+///   *toward* the projected estimate P_G(S) instead of projecting onto it hard:
+///   ad_target_ridge, ad_target_lw, ad_target_oas.
 /// Recognised parameter keys: "alpha" (ridge, default 0.2), "lam" (sparse,
-/// default 0.05), "l1_ratio" (elastic-net, default 0.25 in the grid).
+/// default 0.05; also the AD-target strength for ad_target_ridge, default 0.5),
+/// "l1_ratio" (elastic-net, default 0.25 in the grid), "diag_alpha" (optional
+/// identity ridge for the AD-target family; default 1e-3 for ad_target_ridge,
+/// 0 for ad_target_lw/oas).
 struct EstimatorSpec {
   std::string method;
   std::map<std::string, double> params;
@@ -57,6 +65,16 @@ Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
                                     const std::vector<int>& labels,
                                     const EstimatorSpec& spec);
 
+/// General-symmetry overload: identical to the labels form, but AD variants
+/// project through the arbitrary group commutant @c sym (from
+/// pair_symmetry_from_generators / _banded / _from_labels) instead of the
+/// block-exchangeable projection.  With @c sym = pair_symmetry_from_labels(l)
+/// this reproduces the labels overload (up to summation order).
+/// @throws std::invalid_argument for an unknown method or @c sym.p != X.cols().
+Eigen::MatrixXd estimate_covariance(const Eigen::MatrixXd& X,
+                                    const PairSymmetry& sym,
+                                    const EstimatorSpec& spec);
+
 /// Negative log-likelihood of one observation @c x under N(@c mu, @c Sigma):
 ///   0.5 * (p*log(2*pi) + logdet(Sigma) + (x-mu)^T Sigma^{-1} (x-mu)).
 /// @c Sigma is passed through make_pd first (matching the prototype); if it is
@@ -77,6 +95,10 @@ double gaussian_nll_one(const Eigen::VectorXd& x, const Eigen::VectorXd& mu,
 double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
                const EstimatorSpec& spec);
 
+/// General-symmetry overload of @c loo_nll (AD variants project through @c sym).
+double loo_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+               const EstimatorSpec& spec);
+
 /// The conservative candidate grid used by @c recommend_estimator, depending on
 /// the problem shape (p genes, n samples).  Mirrors the prototype's
 /// candidate_grid: a ridge sweep, the four data-driven shrinkers, and a
@@ -88,6 +110,12 @@ std::vector<EstimatorSpec> candidate_grid(int p, int n);
 /// estimation throws are skipped (matching the prototype's try/except).
 std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
                                                  const std::vector<int>& labels);
+
+/// General-symmetry overload of @c recommend_estimator: score the candidate
+/// grid with AD variants projecting through the arbitrary group commutant
+/// @c sym, sorted ascending by leave-one-out NLL.
+std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
+                                                 const PairSymmetry& sym);
 
 }  // namespace adgencov
 
