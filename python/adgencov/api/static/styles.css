@@ -134,6 +134,25 @@ svg#network { display: block; width: 100%; max-width: 640px; margin: 0 auto; bac
 .hub-table th { color: var(--muted); font-weight: 600; }
 .hub-table td.num, .hub-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .hub-table td .lg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
+
+/* "Top gene pairs" — clickable list, one click away from a STRING search */
+.pairs-panel { margin: 10px auto 0; max-width: 640px; }
+.pairs-panel h3 { margin: 0 0 6px; font-size: 13px; color: var(--accent); }
+.pairs-panel h3 .hint { margin-left: 8px; font-weight: 400; }
+.pairs-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; }
+.pair-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px;
+  border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.pair-row:last-child { border-bottom: none; }
+.pair-row:hover { background: #223148; }
+.pair-row.active { background: #12362a; }
+.pair-row .pn { font-weight: 600; }
+.pair-row .arrow { color: var(--muted); }
+.pair-row .cov { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pair-row .cov.pos { color: #ff8f7a; }
+.pair-row .cov.neg { color: #7fb0ff; }
 .legend { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 8px; justify-content: center; }
 .legend .bar { height: 10px; width: 160px; border-radius: 3px;
   background: linear-gradient(90deg, #3b6fe0, #0d1420 50%, #e0563b); }

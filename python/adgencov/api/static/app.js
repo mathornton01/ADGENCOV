@@ -486,6 +486,25 @@
   var EDGE_OPACITY = [0.30, 0.48, 0.66, 0.88];
   var STRENGTH_LABELS = ["Weak", "Moderate", "Strong", "Very strong"];
 
+  // Node marker sizing, shared between the collision layout and the renderer
+  // so hub nodes never settle closer together than their drawn radius allows
+  // (previously a flat 17px separation let big markers visibly overlap into
+  // jagged, triangle-like blobs in dense hub clusters).
+  var NODE_R_MIN = 3.0, NODE_R_SPAN = 5.5;
+  // The snoRNA "diamond" marker's centre-to-vertex reach relative to its base
+  // radius; was 1.25 (25% oversized vs. the circle/square markers, and the
+  // main driver of the overlap), trimmed to keep it visually distinct but
+  // no longer dominate the plot.
+  var DIAMOND_SCALE = 1.05;
+  function nodeRadius(deg, maxDeg) {
+    return NODE_R_MIN + NODE_R_SPAN * Math.sqrt((deg || 0) / (maxDeg || 1));
+  }
+  // Effective on-screen reach used for collision separation (bigger for the
+  // pointed diamond marker than for circles/squares of the same radius).
+  function nodeReach(r, type) {
+    return type === "snoRNA" ? r * DIAMOND_SCALE : r;
+  }
+
   // Deterministic small hash of a gene id (stable layout seed, no Math.random).
   function geneHash(s) {
     var h = 2166136261;
@@ -551,7 +570,7 @@
   // viewport.  Linear springs (vs. FR's quadratic pull) are far more stable —
   // dense cliques settle at ~L spacing instead of collapsing to a point.
   // Deterministic: seeded from the per-node hash, no Math.random.
-  function forceLayout(nodes, links, comm, W, H) {
+  function forceLayout(nodes, links, comm, W, H, degree) {
     var n = nodes.length;
     if (!n) { return; }
     var idOf = {}; for (var i = 0; i < n; i++) { idOf[nodes[i].id] = i; }
@@ -621,12 +640,25 @@
       nodes[i].y = offY + (nodes[i].y - minY) * scale;
     }
     // Collision relaxation — guarantee legibility by pushing apart any nodes
-    // closer than SEP px (dense cliques otherwise pack into an unreadable ball).
-    var SEP = 17, SEP2 = SEP * SEP;
+    // closer than their drawn radii allow (dense cliques otherwise pack into
+    // an unreadable ball, and — since this used to be a flat 17px regardless
+    // of marker size — big hub markers, especially the pointed snoRNA
+    // diamond, could overlap into jagged blobs). Separation now scales with
+    // each node's actual on-screen reach, with a floor so small nodes still
+    // get a comfortable gap.
+    var maxDeg2 = 1;
+    for (i = 0; i < n; i++) { var d0 = (degree && degree[nodes[i].id]) || 0; if (d0 > maxDeg2) { maxDeg2 = d0; } }
+    var reach = new Array(n);
+    for (i = 0; i < n; i++) {
+      var dgI = (degree && degree[nodes[i].id]) || 0;
+      reach[i] = nodeReach(nodeRadius(dgI, maxDeg2), rnaType(nodes[i].id));
+    }
+    var SEP_PAD = 6, SEP_MIN = 17;
     for (var pass = 0; pass < 60; pass++) {
       var moved = false;
       for (i = 0; i < n; i++) {
         for (var j = i + 1; j < n; j++) {
+          var SEP = Math.max(SEP_MIN, reach[i] + reach[j] + SEP_PAD), SEP2 = SEP * SEP;
           var cx = nodes[j].x - nodes[i].x, cy = nodes[j].y - nodes[i].y;
           var cd2 = cx * cx + cy * cy;
           if (cd2 >= SEP2) { continue; }
@@ -670,7 +702,7 @@
     for (var g in degree) { if (degree[g] > 0) { nodeIds.push(g); } }
     var comm = louvain(nodeIds, links);
     var nodes = nodeIds.map(function (id) { return { id: id, hash: geneHash(id) }; });
-    forceLayout(nodes, links, comm, W, H);
+    forceLayout(nodes, links, comm, W, H, degree);
     var pos = {};
     for (var i = 0; i < nodes.length; i++) { pos[nodes[i].id] = { x: nodes[i].x, y: nodes[i].y }; }
     // Community sizes (for the legend) and community count.
@@ -698,7 +730,7 @@
     while (svg.firstChild) { svg.removeChild(svg.firstChild); }
     var edges = result.edges || [];
     $("edge-count").textContent = "(" + edges.length + " edges)";
-    if (!edges.length) { renderNetLegend(null); renderHubTable(null, result); return; }
+    if (!edges.length) { renderNetLegend(null); renderHubTable(null, result); renderPairsPanel(null, result); return; }
 
     var net = computeNetwork(result);
     var pos = net.pos, comm = net.comm, degree = net.degree, maxAbs = net.maxAbs;
@@ -743,7 +775,7 @@
       var gene = net.nodeIds[ni];
       var p = pos[gene];
       var deg = degree[gene] || 0;
-      var r = 3.0 + 5.5 * Math.sqrt(deg / maxDeg);
+      var r = nodeRadius(deg, maxDeg);
       var fill = communityColor(comm[gene]);
       var shape = nodeShape(NS, rnaType(gene), p.x, p.y, r, fill);
       shape.setAttribute("class", "node");
@@ -774,6 +806,7 @@
 
     renderNetLegend(net);
     renderHubTable(net, result);
+    renderPairsPanel(net, result);
   }
 
   // Legend: node shapes, edge-strength ramp, and Louvain communities + sizes.
@@ -827,6 +860,50 @@
     host.classList.remove("hidden");
   }
 
+  // "Top gene pairs" — the strongest edges by |covariance|, as a plain
+  // clickable list (not a graph) so a pair can be searched against STRING-db
+  // in one click instead of having to find and click its edge in the plot.
+  function renderPairsPanel(net, result) {
+    var host = $("pairs-panel");
+    if (!host) { return; }
+    if (!net) { host.classList.add("hidden"); return; }
+    var edges = (result.edges || []).slice()
+      .sort(function (a, b) { return b.abs_covariance - a.abs_covariance; });
+    var top = edges.slice(0, Math.min(12, edges.length));
+    var rows = "";
+    for (var i = 0; i < top.length; i++) {
+      var ed = top[i];
+      var sign = ed.covariance >= 0 ? "pos" : "neg";
+      rows += '<li class="pair-row" data-i="' + i + '" tabindex="0" role="button">' +
+        '<span class="pn">' + esc(displayName(ed.gene_a)) + "</span>" +
+        '<span class="arrow">&harr;</span>' +
+        '<span class="pn">' + esc(displayName(ed.gene_b)) + "</span>" +
+        '<span class="cov ' + sign + '">' + fmt(ed.covariance, 3) + "</span></li>";
+    }
+    host.innerHTML =
+      '<h3>Top gene pairs <span class="hint">click a pair to search STRING</span></h3>' +
+      '<ul class="pairs-list" id="pairs-list">' + rows + "</ul>" +
+      '<div class="interactions" id="pairs-interactions"></div>';
+    host.classList.remove("hidden");
+    var list = $("pairs-list");
+    var items = list.querySelectorAll(".pair-row");
+    var select = function (idx) {
+      var all = list.querySelectorAll(".pair-row");
+      for (var k = 0; k < all.length; k++) { all[k].classList.remove("active"); }
+      items[idx].classList.add("active");
+      var ed = top[idx];
+      fetchInteractionsInto($("pairs-interactions"), [displayName(ed.gene_a), displayName(ed.gene_b)]);
+    };
+    for (var ii = 0; ii < items.length; ii++) {
+      (function (idx, li) {
+        li.addEventListener("click", function () { select(idx); });
+        li.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(idx); }
+        });
+      })(ii, items[ii]);
+    }
+  }
+
   // Build an SVG node marker shaped by RNA class, centred at (x, y).
   function nodeShape(NS, type, x, y, r, fill) {
     var el;
@@ -837,7 +914,7 @@
       el.setAttribute("rx", "0.8");
     } else if (type === "snoRNA") {
       el = document.createElementNS(NS, "polygon");
-      var q = (r * 1.25).toFixed(1);
+      var q = (r * DIAMOND_SCALE).toFixed(1);
       el.setAttribute("points",
         x + "," + (y - q) + " " + (x + q) + "," + y + " " + x + "," + (+y + +q) + " " + (x - q) + "," + y);
     } else {
@@ -905,8 +982,14 @@
   }
 
   function fetchInteractions(genes) {
-    var host = $("cell-interactions");
-    var btn = $("cell-string-btn");
+    fetchInteractionsInto($("cell-interactions"), genes, $("cell-string-btn"));
+  }
+
+  // Shared STRING-lookup runner: renders into any host element, optionally
+  // disabling a trigger button (cell-detail's button, or none for the top
+  // gene pairs list, where the whole row is the trigger).
+  function fetchInteractionsInto(host, genes, btn) {
+    if (!host) { return; }
     host.innerHTML = '<p class="hint">Searching STRING-db…</p>';
     if (btn) { btn.disabled = true; }
     fetch(API + "/interactions?genes=" + encodeURIComponent(genes.join(",")) +
