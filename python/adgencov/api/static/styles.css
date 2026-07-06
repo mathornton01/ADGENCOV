@@ -107,7 +107,33 @@ td.num { font-variant-numeric: tabular-nums; text-align: right; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .blocks .genes { color: var(--muted); font-size: 12px; word-break: break-word; }
 
-canvas, svg#network { display: block; width: 100%; max-width: 440px; margin: 0 auto; background: #0d1420; border-radius: 8px; }
+canvas { display: block; width: 100%; max-width: 440px; margin: 0 auto; background: #0d1420; border-radius: 8px; }
+svg#network { display: block; width: 100%; max-width: 640px; margin: 0 auto; background: #0d1420; border-radius: 8px; }
+
+/* force-directed network legend + hub table (mirrors the reference figure) */
+.net-legend {
+  display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 10px auto 0; max-width: 640px;
+  font-size: 11px; color: var(--muted); padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.net-legend .lg-group { min-width: 130px; }
+.net-legend .lg-title { color: var(--ink); font-weight: 700; font-size: 11px; margin-bottom: 5px; }
+.net-legend .lg-row { display: flex; align-items: center; gap: 7px; line-height: 1.7; }
+.net-legend .lg-n { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.net-legend .lg-total { margin-top: 6px; color: var(--ink); font-size: 11px; }
+.net-legend .lg-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.net-legend .lg-line { width: 26px; border-radius: 2px; flex: none; }
+.net-legend .lg-shape { width: 11px; height: 11px; flex: none; background: var(--muted); }
+.net-legend .lg-shape.circle { border-radius: 50%; }
+.net-legend .lg-shape.square { border-radius: 1px; }
+.net-legend .lg-shape.diamond { border-radius: 1px; transform: rotate(45deg) scale(0.82); }
+.hub-panel { margin: 10px auto 0; max-width: 640px; }
+.hub-panel h3 { margin: 0 0 6px; font-size: 13px; color: var(--accent); }
+.hub-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.hub-table th, .hub-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.hub-table th { color: var(--muted); font-weight: 600; }
+.hub-table td.num, .hub-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.hub-table td .lg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
 .legend { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 8px; justify-content: center; }
 .legend .bar { height: 10px; width: 160px; border-radius: 3px;
   background: linear-gradient(90deg, #3b6fe0, #0d1420 50%, #e0563b); }

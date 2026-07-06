@@ -74,6 +74,7 @@ __all__ = [
     "pick_supplementary_matrix",
     "rank_supplementary_matrices",
     "read_supplementary_matrix",
+    "read_tar_matrix",
     "fetch_supplementary_series",
 ]
 
@@ -605,6 +606,77 @@ _MATRIX_SOFT_DENY = (
 _TABULAR_EXTS = (
     ".txt.gz", ".tsv.gz", ".csv.gz", ".tab.gz", ".txt", ".tsv", ".csv", ".tab",
 )
+# Archive extensions that may *bundle* an expression matrix (or per-sample
+# files that assemble into one) — common for single-cell / array ``_RAW.tar``.
+_TAR_EXTS = (".tar.gz", ".tgz", ".tar")
+
+
+def _suppl_max_bytes() -> int:
+    """Per-file supplementary download ceiling (MB), overridable via env.
+
+    Multi-GB single-cell matrices (e.g. a 3 GB ``log2TPM`` file) would otherwise
+    stream forever and never parse; we skip anything over the cap and move to a
+    smaller candidate.  ``ADGENCOV_SUPPL_MAX_MB`` raises/lowers the limit.
+    """
+    raw = os.environ.get("ADGENCOV_SUPPL_MAX_MB")
+    default = 700
+    try:
+        mb = float(raw) if raw else default
+    except ValueError:
+        mb = default
+    return int(max(1.0, mb) * 1024 * 1024)
+
+
+def _rm_quiet(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _download_capped(
+    url: str, dest: str, *, timeout: float, max_bytes: int
+) -> None:
+    """Stream *url* to *dest*, aborting (and raising) if it exceeds *max_bytes*.
+
+    Streaming (vs. ``resp.read()`` into RAM) keeps big matrices off the heap,
+    and the byte ceiling turns an unbounded multi-GB download into a fast,
+    clean skip.  Honors ``Content-Length`` up front when the server sends it.
+    """
+    tmp = dest + ".part"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            clen = resp.headers.get("Content-Length")
+            if clen is not None:
+                try:
+                    if int(clen) > max_bytes:
+                        raise GeoError(
+                            f"file is {int(clen) // (1024 * 1024)} MB, over the "
+                            f"{max_bytes // (1024 * 1024)} MB cap (raise "
+                            "ADGENCOV_SUPPL_MAX_MB to allow)"
+                        )
+                except ValueError:
+                    pass
+            total = 0
+            with open(tmp, "wb") as out:
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise GeoError(
+                            f"exceeded the {max_bytes // (1024 * 1024)} MB cap "
+                            "mid-download (raise ADGENCOV_SUPPL_MAX_MB to allow)"
+                        )
+                    out.write(chunk)
+        os.replace(tmp, dest)
+    except GeoError:
+        _rm_quiet(tmp)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _rm_quiet(tmp)
+        raise GeoError(f"download failed ({exc})") from exc
 
 
 def supplementary_dir_url(accession: str) -> str:
@@ -748,14 +820,19 @@ def read_supplementary_matrix(
         raise GeoError("supplementary matrix is empty")
     sep = _sniff_delimiter(header_line)
 
-    df = pd.read_csv(
-        io.StringIO(text),
-        sep=sep,
-        engine="python",
-        comment="#",
-        dtype=str,
-        keep_default_na=False,
-    )
+    # The fast C parser handles single-char delimiters; only the run-of-spaces
+    # regex needs the (much slower) Python engine.  This matters a lot for the
+    # large single-cell matrices that now pass the size cap.
+    if sep == r"\s+":
+        df = pd.read_csv(
+            io.StringIO(text), sep=sep, engine="python",
+            comment="#", dtype=str, keep_default_na=False,
+        )
+    else:
+        df = pd.read_csv(
+            io.StringIO(text), sep=sep, engine="c",
+            comment="#", dtype=str, keep_default_na=False,
+        )
     if df.shape[1] < 2:
         raise GeoError("supplementary file does not look like a matrix (<2 columns)")
 
@@ -900,44 +977,49 @@ def fetch_supplementary_series(
     timeout: float = 60.0,
     series_metadata: Optional[Dict[str, Any]] = None,
 ) -> GeoSeries:
-    """Find, download, and parse the best supplementary matrix for a series."""
+    """Find, download, and parse the best supplementary matrix for a series.
+
+    Tries flat matrix-shaped files first (best name-ranked candidate first,
+    content is the arbiter), then falls back to ``.tar`` archives — single-cell
+    and microarray series frequently publish only a ``*_RAW.tar`` that either
+    bundles the real matrix or holds one file per sample (see
+    :func:`read_tar_matrix`).  Downloads are streamed with a size cap so a
+    multi-GB matrix is skipped cleanly rather than hanging the pipeline.
+    """
     acc = accession.strip().upper()
     names = list_supplementary_files(acc, timeout=timeout)
     if not names:
         raise GeoError(f"{acc}: no supplementary files published")
     ranked = rank_supplementary_matrices(names)
-    if not ranked:
+    tar_names = [n for n in names if n.lower().endswith(_TAR_EXTS)]
+    if not ranked and not tar_names:
         raise GeoError(
             f"{acc}: no matrix-shaped supplementary file among {names!r}"
         )
 
     cdir = cache_dir or default_cache_dir()
     os.makedirs(cdir, exist_ok=True)
-
-    # The file name only *ranks* candidates; content is the arbiter.  Try each
-    # plausible file in order and return the first that yields a real matrix
-    # (≥2 sample columns).  This rescues annotated/differential tables (e.g. a
-    # DESeq2 ``.annot`` file whose ``*_count`` columns are the matrix) that a
-    # name-only filter would discard.
+    max_bytes = _suppl_max_bytes()
     errors: List[str] = []
-    for choice in ranked:
+
+    def _fetch(choice: str) -> Optional[str]:
         dest = os.path.join(cdir, f"{acc}__{choice}")
         if force or not os.path.exists(dest) or os.path.getsize(dest) == 0:
             url = supplementary_dir_url(acc) + choice
-            tmp = dest + ".part"
             try:
-                with urllib.request.urlopen(url, timeout=timeout) as resp, open(tmp, "wb") as out:
-                    out.write(resp.read())
-                os.replace(tmp, dest)
-            except Exception as exc:  # noqa: BLE001
-                if os.path.exists(tmp):
-                    try:
-                        os.remove(tmp)
-                    except OSError:
-                        pass
-                errors.append(f"{choice}: download failed ({exc})")
-                continue
+                _download_capped(url, dest, timeout=timeout, max_bytes=max_bytes)
+            except GeoError as exc:
+                errors.append(f"{choice}: {exc}")
+                return None
+        return dest
 
+    # 1) Flat, matrix-shaped files.  The file name only *ranks* candidates;
+    # content is the arbiter, which rescues annotated/differential tables (e.g.
+    # a DESeq2 ``.annot`` file whose ``*_count`` columns are the matrix).
+    for choice in ranked:
+        dest = _fetch(choice)
+        if dest is None:
+            continue
         meta = dict(series_metadata or {})
         meta["supplementary_file"] = choice
         meta["source"] = "supplementary"
@@ -947,9 +1029,246 @@ def fetch_supplementary_series(
             errors.append(f"{choice}: {exc}")
             continue
 
-    detail = "; ".join(errors) if errors else f"tried {ranked!r}"
+    # 2) Archive fallback: a bundled matrix, or per-sample files to assemble.
+    for tar in tar_names:
+        dest = _fetch(tar)
+        if dest is None:
+            continue
+        meta = dict(series_metadata or {})
+        meta["supplementary_file"] = tar
+        meta["source"] = "supplementary_tar"
+        try:
+            return read_tar_matrix(dest, accession=acc, series_metadata=meta)
+        except GeoError as exc:
+            errors.append(f"{tar}: {exc}")
+            continue
+
+    detail = "; ".join(errors) if errors else f"tried {ranked + tar_names!r}"
     raise GeoError(
         f"{acc}: no supplementary file yielded a usable expression matrix ({detail})"
+    )
+
+
+def read_tar_matrix(
+    path: Union[str, os.PathLike],
+    *,
+    accession: Optional[str] = None,
+    series_metadata: Optional[Dict[str, Any]] = None,
+    member_cap: int = 8000,
+) -> GeoSeries:
+    """Parse an expression matrix out of a ``.tar`` / ``.tar.gz`` archive.
+
+    Two archive shapes are handled, in order:
+
+    1. **Bundled matrix** — one member is itself a matrix-shaped table
+       (``*_counts.txt.gz`` …).  Members are name-ranked like flat supplementary
+       files and the first that parses to a real matrix wins.
+    2. **Per-sample files** — the archive holds one small table per sample (the
+       classic single-cell / array ``*_RAW.tar``), each a gene-id column plus a
+       single value column.  These are assembled column-wise into a matrix,
+       keyed by a cleaned sample name derived from the member filename.
+    """
+    import tarfile
+
+    try:
+        tf = tarfile.open(path)
+    except Exception as exc:  # noqa: BLE001
+        raise GeoError(f"could not open tar archive {os.fspath(path)!r}: {exc}") from exc
+
+    errors: List[str] = []
+    try:
+        members = [m for m in tf.getmembers() if m.isfile() and m.size > 0]
+        if not members:
+            raise GeoError("tar archive is empty")
+
+        # (1) A member that is itself a full matrix.
+        def _score(m: "tarfile.TarInfo") -> int:
+            return _score_matrix_candidate(os.path.basename(m.name))
+
+        bundled = sorted(
+            (m for m in members if _score(m) > -100), key=_score, reverse=True
+        )
+        for m in bundled:
+            tmp = None
+            try:
+                fobj = tf.extractfile(m)
+                if fobj is None:
+                    continue
+                # Extract to a temp file preserving the basename so the gzip
+                # handling in read_supplementary_matrix kicks in for ``.gz``.
+                suffix = "_" + os.path.basename(m.name)
+                fd, tmp = tempfile.mkstemp(prefix="adgencov_tar_", suffix=suffix)
+                with os.fdopen(fd, "wb") as out:
+                    out.write(fobj.read())
+                meta = dict(series_metadata or {})
+                meta["archive_member"] = m.name
+                return read_supplementary_matrix(tmp, accession=accession, series_metadata=meta)
+            except GeoError as exc:
+                errors.append(f"{m.name}: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{m.name}: {exc}")
+            finally:
+                if tmp is not None:
+                    _rm_quiet(tmp)
+
+        # (2) Per-sample assembly.
+        try:
+            return _assemble_per_sample_tar(
+                tf, members, accession=accession,
+                series_metadata=series_metadata, member_cap=member_cap,
+            )
+        except GeoError as exc:
+            errors.append(f"per-sample assembly: {exc}")
+
+        raise GeoError(
+            "no usable matrix in archive ("
+            + ("; ".join(errors) if errors else "no tabular members")
+            + ")"
+        )
+    finally:
+        tf.close()
+
+
+def _sample_name_from_member(name: str) -> str:
+    """Derive a sample label from an archive member path.
+
+    ``GSM2154556_P1_A1.csv.gz`` → ``GSM2154556_P1_A1``.  Strips directory parts
+    and known tabular/compression extensions.
+    """
+    base = os.path.basename(name)
+    low = base.lower()
+    for ext in (".tar.gz", ".tgz", ".tar"):
+        if low.endswith(ext):
+            base = base[: -len(ext)]
+            low = base.lower()
+    for ext in (".gz",):
+        if low.endswith(ext):
+            base = base[: -len(ext)]
+            low = base.lower()
+    for ext in (".txt", ".tsv", ".csv", ".tab"):
+        if low.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    return base or name
+
+
+def _assemble_per_sample_tar(
+    tf: Any,
+    members: Sequence[Any],
+    *,
+    accession: Optional[str],
+    series_metadata: Optional[Dict[str, Any]],
+    member_cap: int,
+) -> GeoSeries:
+    """Assemble a matrix from one-table-per-sample archive members.
+
+    Each qualifying member must be a two-column (gene-id, value) table.  The
+    per-member value columns become the samples; genes are aligned on the union
+    of ids (missing entries filled with 0).  Requires ≥3 samples and ≥2 shared
+    genes to be considered a real matrix.
+    """
+    tab = [
+        m for m in members
+        if os.path.basename(m.name).lower().endswith(_TABULAR_EXTS)
+        and not os.path.basename(m.name).lower().startswith(".")
+    ]
+    if len(tab) < 3:
+        raise GeoError(f"only {len(tab)} tabular members (need ≥3 per-sample files)")
+    if len(tab) > member_cap:
+        raise GeoError(
+            f"{len(tab)} members exceeds the {member_cap}-file assembly cap"
+        )
+
+    columns: Dict[str, "pd.Series"] = {}
+    used: Dict[str, int] = {}
+    parsed = 0
+    for m in tab:
+        fobj = tf.extractfile(m)
+        if fobj is None:
+            continue
+        raw = fobj.read()
+        base = os.path.basename(m.name)
+        if base.lower().endswith(".gz"):
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                continue
+        text = raw.decode("utf-8", errors="replace")
+        header_line = next(
+            (ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")),
+            "",
+        )
+        if not header_line:
+            continue
+        sep = _sniff_delimiter(header_line)
+        try:
+            sub = pd.read_csv(
+                io.StringIO(text), sep=sep,
+                engine="python" if sep == r"\s+" else "c",
+                comment="#", dtype=str, keep_default_na=False, header=None,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if sub.shape[1] < 2:
+            continue
+        # First column = gene ids; last mostly-numeric column = the value.
+        gcol = 0
+        vcol = None
+        for c in range(sub.shape[1] - 1, 0, -1):
+            if _mostly_numeric(sub[c].tolist()):
+                vcol = c
+                break
+        if vcol is None:
+            continue
+        # Drop a header row if the value cell isn't numeric.
+        first_val = str(sub.iloc[0, vcol]).strip()
+        try:
+            float(first_val)
+        except ValueError:
+            sub = sub.iloc[1:]
+        genes = sub[gcol].astype(str).map(lambda s: s.strip())
+        vals = [_to_float(v) for v in sub[vcol].tolist()]
+        s = pd.Series(vals, index=genes.values)
+        s = s[~s.index.duplicated(keep="first")]
+
+        sample = _sample_name_from_member(m.name)
+        if sample in used:
+            used[sample] += 1
+            sample = f"{sample}.{used[sample]}"
+        else:
+            used[sample] = 0
+        columns[sample] = s
+        parsed += 1
+
+    if len(columns) < 3:
+        raise GeoError(
+            f"assembled only {len(columns)} usable per-sample columns (need ≥3)"
+        )
+
+    expr_num = pd.DataFrame(columns).fillna(0.0)
+    if expr_num.shape[0] < 2:
+        raise GeoError("assembled matrix has fewer than 2 shared genes")
+    expr_num.index = [str(g).strip() for g in expr_num.index]
+    expr = expr_num.reset_index().rename(columns={"index": GENE_COL})
+    expr = expr[expr[GENE_COL].astype(str).str.strip() != ""].reset_index(drop=True)
+    if expr.empty:
+        raise GeoError("assembled matrix had no rows with a gene id")
+
+    meta = dict(series_metadata or {})
+    meta.setdefault("source", "supplementary_tar")
+    meta["assembled_samples"] = len(columns)
+    acc = (
+        accession
+        or _first(meta.get("geo_accession"))
+        or "<local>"
+    )
+    return GeoSeries(
+        accession=acc,
+        expression=expr,
+        samples=pd.DataFrame(),
+        metadata=meta,
+        platform=_first(meta.get("platform_id")),
+        source_path=None,
     )
 
 

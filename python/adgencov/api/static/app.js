@@ -465,63 +465,271 @@
   }
 
   // -- covariance network --------------------------------------------------
-  // Nodes placed on a circle, grouped into contiguous arcs by block, so block
-  // structure is visible without a physics simulation.  Edges from the payload
-  // are drawn with width/opacity by |covariance|.
+  // Force-directed layout (Fruchterman-Reingold) with Louvain community
+  // detection, echoing the reference figure: nodes coloured by community,
+  // shaped by RNA class, sized by degree; edges tinted/scaled by |covariance|.
+  // The expensive layout + community solve runs once per analysis and is cached
+  // on the result object so the async symbol relabel only refreshes text.
+
+  // Community palette — saturated, distinct, colour-blind-leaning.
+  var COMMUNITY_COLORS = [
+    "#4aa3ff", "#ff6b7d", "#5ed19b", "#f5c451", "#b98cff",
+    "#ff9f56", "#5fd0e0", "#f78fb3", "#a3d65c", "#ff7ac0"
+  ];
+  function communityColor(i) {
+    return COMMUNITY_COLORS[((i % COMMUNITY_COLORS.length) + COMMUNITY_COLORS.length) % COMMUNITY_COLORS.length];
+  }
+  // Purple (positive) / blue (negative) strength ramps, weak → very strong.
+  var EDGE_RAMP_POS = ["#cbb8ef", "#a98fe0", "#8b5fd6", "#6a30b8"];
+  var EDGE_RAMP_NEG = ["#b6cdf0", "#7ea3e2", "#5478d6", "#2f52b8"];
+  var EDGE_WIDTH = [0.5, 1.1, 1.9, 2.9];
+  var EDGE_OPACITY = [0.30, 0.48, 0.66, 0.88];
+  var STRENGTH_LABELS = ["Weak", "Moderate", "Strong", "Very strong"];
+
+  // Deterministic small hash of a gene id (stable layout seed, no Math.random).
+  function geneHash(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return h >>> 0;
+  }
+
+  // Greedy modularity community detection (Louvain local-moving level).
+  // nodeIds: string[]; links: {a,b,w}[].  Returns id -> community index,
+  // with communities relabelled 0..K-1 in descending size order.
+  function louvain(nodeIds, links) {
+    var n = nodeIds.length;
+    var idx = {}; for (var i = 0; i < n; i++) { idx[nodeIds[i]] = i; }
+    var adj = []; for (i = 0; i < n; i++) { adj[i] = {}; }
+    var deg = new Array(n).fill(0);
+    var m2 = 0;
+    for (var e = 0; e < links.length; e++) {
+      var a = idx[links[e].a], b = idx[links[e].b];
+      if (a === undefined || b === undefined || a === b) { continue; }
+      var w = links[e].w || 1e-6;
+      adj[a][b] = (adj[a][b] || 0) + w;
+      adj[b][a] = (adj[b][a] || 0) + w;
+      deg[a] += w; deg[b] += w; m2 += 2 * w;
+    }
+    var comm = new Array(n);
+    for (i = 0; i < n; i++) { comm[i] = i; }
+    if (m2 === 0) { var solo = {}; for (i = 0; i < n; i++) { solo[nodeIds[i]] = i; } return solo; }
+    var sigTot = deg.slice();
+    var improved = true, passes = 0;
+    while (improved && passes < 30) {
+      improved = false; passes++;
+      for (var v = 0; v < n; v++) {
+        var cv = comm[v];
+        sigTot[cv] -= deg[v];
+        var neigh = {};
+        for (var u in adj[v]) { var cu = comm[u]; neigh[cu] = (neigh[cu] || 0) + adj[v][u]; }
+        var best = cv, bestGain = 0, ki = deg[v];
+        // Staying put (contribution of v's own community minus itself) is the
+        // baseline; only move for a strictly positive modularity gain.
+        var stayKin = neigh[cv] || 0;
+        for (var c in neigh) {
+          var gain = neigh[c] - sigTot[c] * ki / m2;
+          var rel = gain - (stayKin - sigTot[cv] * ki / m2);
+          if (rel > bestGain + 1e-12) { bestGain = rel; best = +c; }
+        }
+        comm[v] = best; sigTot[best] += deg[v];
+        if (best !== cv) { improved = true; }
+      }
+    }
+    // Relabel by descending community size for stable, size-ordered colours.
+    var counts = {};
+    for (i = 0; i < n; i++) { counts[comm[i]] = (counts[comm[i]] || 0) + 1; }
+    var order = Object.keys(counts).sort(function (x, y) { return counts[y] - counts[x]; });
+    var relabel = {}; for (i = 0; i < order.length; i++) { relabel[order[i]] = i; }
+    var out = {};
+    for (i = 0; i < n; i++) { out[nodeIds[i]] = relabel[comm[i]]; }
+    return out;
+  }
+
+  // Spring-electrical layout (D3-style): linear Hooke springs on edges +
+  // inverse-square repulsion between all pairs, integrated with velocity
+  // damping and a decaying alpha, centroid pinned each tick, then fit to the
+  // viewport.  Linear springs (vs. FR's quadratic pull) are far more stable —
+  // dense cliques settle at ~L spacing instead of collapsing to a point.
+  // Deterministic: seeded from the per-node hash, no Math.random.
+  function forceLayout(nodes, links, comm, W, H) {
+    var n = nodes.length;
+    if (!n) { return; }
+    var idOf = {}; for (var i = 0; i < n; i++) { idOf[nodes[i].id] = i; }
+    var L = 0.90 * Math.sqrt((W * H) / n);          // ideal edge length
+    var REP = L * L * 1.7;                            // repulsion charge
+    var SPRING = 0.055;                               // Hooke stiffness
+    var minD2 = (L * 0.35) * (L * 0.35);             // soften near-zero distance
+    // Seed on a golden-angle spiral with a hash jitter (no coincident nodes).
+    for (i = 0; i < n; i++) {
+      var h = nodes[i].hash;
+      var ang = i * 2.399963229;
+      var rad = L * 0.6 * Math.sqrt(i + 1);
+      nodes[i].x = rad * Math.cos(ang) + (((h % 1000) / 1000) - 0.5) * L;
+      nodes[i].y = rad * Math.sin(ang) + ((((h >> 9) % 1000) / 1000) - 0.5) * L;
+      nodes[i].vx = 0; nodes[i].vy = 0;
+    }
+    var iters = n > 400 ? 260 : 460;
+    var alpha = 1.0, velDecay = 0.82;
+    for (var it = 0; it < iters; it++) {
+      // Repulsion — inverse-square, softened, scaled by alpha.
+      for (i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+          var dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
+          var d2 = dx * dx + dy * dy; if (d2 < minD2) { d2 = minD2; }
+          var dist = Math.sqrt(d2);
+          var rep = REP / d2 * alpha;                // push magnitude
+          var ux = dx / dist, uy = dy / dist;
+          nodes[i].vx -= ux * rep; nodes[i].vy -= uy * rep;
+          nodes[j].vx += ux * rep; nodes[j].vy += uy * rep;
+        }
+      }
+      // Springs — linear pull toward length L, stiffer for strong covariances.
+      for (var e = 0; e < links.length; e++) {
+        var a = idOf[links[e].a], b = idOf[links[e].b];
+        if (a === undefined || b === undefined) { continue; }
+        var lx = nodes[b].x - nodes[a].x, ly = nodes[b].y - nodes[a].y;
+        var ld = Math.sqrt(lx * lx + ly * ly) || 0.01;
+        var att = (ld - L) * SPRING * (0.5 + 0.9 * links[e].w) * alpha;
+        var vx = lx / ld, vy = ly / ld;
+        nodes[a].vx += vx * att; nodes[a].vy += vy * att;
+        nodes[b].vx -= vx * att; nodes[b].vy -= vy * att;
+      }
+      // Integrate with damping.
+      for (i = 0; i < n; i++) {
+        nodes[i].x += nodes[i].vx; nodes[i].y += nodes[i].vy;
+        nodes[i].vx *= velDecay; nodes[i].vy *= velDecay;
+      }
+      // Pin centroid so the graph cannot drift.
+      var mx = 0, my = 0;
+      for (i = 0; i < n; i++) { mx += nodes[i].x; my += nodes[i].y; }
+      mx /= n; my /= n;
+      for (i = 0; i < n; i++) { nodes[i].x -= mx; nodes[i].y -= my; }
+      alpha *= 0.9925;
+    }
+    // Fit-to-viewport: rescale the settled layout into the canvas with margins.
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (i = 0; i < n; i++) {
+      if (nodes[i].x < minX) { minX = nodes[i].x; } if (nodes[i].x > maxX) { maxX = nodes[i].x; }
+      if (nodes[i].y < minY) { minY = nodes[i].y; } if (nodes[i].y > maxY) { maxY = nodes[i].y; }
+    }
+    var mar = 26;
+    var spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+    var scale = Math.min((W - 2 * mar) / spanX, (H - 2 * mar) / spanY);
+    var offX = (W - spanX * scale) / 2, offY = (H - spanY * scale) / 2;
+    for (i = 0; i < n; i++) {
+      nodes[i].x = offX + (nodes[i].x - minX) * scale;
+      nodes[i].y = offY + (nodes[i].y - minY) * scale;
+    }
+    // Collision relaxation — guarantee legibility by pushing apart any nodes
+    // closer than SEP px (dense cliques otherwise pack into an unreadable ball).
+    var SEP = 17, SEP2 = SEP * SEP;
+    for (var pass = 0; pass < 60; pass++) {
+      var moved = false;
+      for (i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+          var cx = nodes[j].x - nodes[i].x, cy = nodes[j].y - nodes[i].y;
+          var cd2 = cx * cx + cy * cy;
+          if (cd2 >= SEP2) { continue; }
+          var cd = Math.sqrt(cd2) || 0.01;
+          // Deterministic separation direction when exactly coincident.
+          var ndx = cd2 > 1e-6 ? cx / cd : Math.cos(nodes[i].hash);
+          var ndy = cd2 > 1e-6 ? cy / cd : Math.sin(nodes[i].hash);
+          var shove = (SEP - cd) / 2 + 0.5;
+          nodes[i].x -= ndx * shove; nodes[i].y -= ndy * shove;
+          nodes[j].x += ndx * shove; nodes[j].y += ndy * shove;
+          moved = true;
+        }
+      }
+      // Keep everything inside the frame.
+      for (i = 0; i < n; i++) {
+        nodes[i].x = Math.max(mar, Math.min(W - mar, nodes[i].x));
+        nodes[i].y = Math.max(mar, Math.min(H - mar, nodes[i].y));
+      }
+      if (!moved) { break; }
+    }
+  }
+
+  // Compute (or reuse cached) network geometry: connected nodes, degree,
+  // communities, and force-directed positions.  Cached on the result object.
+  function computeNetwork(result) {
+    if (result.__net) { return result.__net; }
+    var edges = result.edges || [];
+    var W = 640, H = 480;
+    var degree = {}, maxAbs = 1e-12, links = [];
+    for (var e = 0; e < edges.length; e++) {
+      var ed = edges[e];
+      degree[ed.gene_a] = (degree[ed.gene_a] || 0) + 1;
+      degree[ed.gene_b] = (degree[ed.gene_b] || 0) + 1;
+      if (ed.abs_covariance > maxAbs) { maxAbs = ed.abs_covariance; }
+    }
+    for (e = 0; e < edges.length; e++) {
+      links.push({ a: edges[e].gene_a, b: edges[e].gene_b, w: edges[e].abs_covariance / maxAbs });
+    }
+    // Only nodes that participate in a shown edge are drawn (matches figure).
+    var nodeIds = [];
+    for (var g in degree) { if (degree[g] > 0) { nodeIds.push(g); } }
+    var comm = louvain(nodeIds, links);
+    var nodes = nodeIds.map(function (id) { return { id: id, hash: geneHash(id) }; });
+    forceLayout(nodes, links, comm, W, H);
+    var pos = {};
+    for (var i = 0; i < nodes.length; i++) { pos[nodes[i].id] = { x: nodes[i].x, y: nodes[i].y }; }
+    // Community sizes (for the legend) and community count.
+    var commSize = {}, nComm = 0;
+    for (i = 0; i < nodeIds.length; i++) {
+      var c = comm[nodeIds[i]]; commSize[c] = (commSize[c] || 0) + 1;
+      if (c + 1 > nComm) { nComm = c + 1; }
+    }
+    result.__net = {
+      W: W, H: H, pos: pos, comm: comm, degree: degree, maxAbs: maxAbs,
+      nodeIds: nodeIds, commSize: commSize, nComm: nComm, nEdges: edges.length
+    };
+    return result.__net;
+  }
+
+  function strengthBucket(w) {
+    if (w >= 0.66) { return 3; }
+    if (w >= 0.40) { return 2; }
+    if (w >= 0.18) { return 1; }
+    return 0;
+  }
+
   function renderNetwork(result, bo) {
     var svg = $("network");
     while (svg.firstChild) { svg.removeChild(svg.firstChild); }
-    $("edge-count").textContent = "(" + (result.edges ? result.edges.length : 0) + " edges)";
-
-    var W = 440, H = 440, cx = W / 2, cy = H / 2, R = 180;
-    var perm = bo.perm, p = perm.length;
-    if (!p) { return; }
-
-    // gene index -> position and colour (colour by its block's palette slot).
-    var blockSlot = {};
-    for (var s = 0; s < bo.order.length; s++) { blockSlot[bo.order[s]] = s; }
-    var pos = {}, color = {};
-    for (var i = 0; i < p; i++) {
-      var gi = perm[i];
-      var ang = (i / p) * 2 * Math.PI - Math.PI / 2;
-      pos[gi] = { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
-      color[gi] = blockColor(blockSlot[result.labels[gi]]);
-    }
-
-    var geneIndex = {};
-    for (var gidx = 0; gidx < result.genes.length; gidx++) { geneIndex[result.genes[gidx]] = gidx; }
-
     var edges = result.edges || [];
-    var maxAbs = 1e-12;
-    for (var e = 0; e < edges.length; e++) { if (edges[e].abs_covariance > maxAbs) { maxAbs = edges[e].abs_covariance; } }
+    $("edge-count").textContent = "(" + edges.length + " edges)";
+    if (!edges.length) { renderNetLegend(null); renderHubTable(null, result); return; }
 
-    // Node degree (from the shown edges) drives which nodes get a text label —
-    // just the top hubs, so the view stays legible like the reference figure.
-    var degree = {};
-    for (var d = 0; d < edges.length; d++) {
-      degree[edges[d].gene_a] = (degree[edges[d].gene_a] || 0) + 1;
-      degree[edges[d].gene_b] = (degree[edges[d].gene_b] || 0) + 1;
-    }
-    var byDeg = result.genes.slice().sort(function (a, b) { return (degree[b] || 0) - (degree[a] || 0); });
+    var net = computeNetwork(result);
+    var pos = net.pos, comm = net.comm, degree = net.degree, maxAbs = net.maxAbs;
+    var W = net.W, H = net.H;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+    // Top hubs (by degree) get a text label so the view stays legible.
+    var byDeg = net.nodeIds.slice().sort(function (a, b) { return (degree[b] || 0) - (degree[a] || 0); });
     var labelSet = {};
-    var nLabels = Math.min(12, p);
-    for (var t = 0; t < nLabels; t++) { if (degree[byDeg[t]]) { labelSet[byDeg[t]] = true; } }
+    for (var t = 0; t < Math.min(14, byDeg.length); t++) { labelSet[byDeg[t]] = true; }
+    var maxDeg = degree[byDeg[0]] || 1;
 
     var NS = "http://www.w3.org/2000/svg";
     var tip = $("net-tooltip");
+    var geneIndex = {};
+    for (var gi = 0; gi < result.genes.length; gi++) { geneIndex[result.genes[gi]] = gi; }
 
-    // edges first (under the nodes), each clickable to open the detail panel.
+    // Edges first (under the nodes), each clickable to open the detail panel.
     for (var k = 0; k < edges.length; k++) {
       var ed = edges[k];
-      var ia = geneIndex[ed.gene_a], ib = geneIndex[ed.gene_b];
-      if (ia === undefined || ib === undefined || !pos[ia] || !pos[ib]) { continue; }
+      var pa = pos[ed.gene_a], pb = pos[ed.gene_b];
+      if (!pa || !pb) { continue; }
       var w = ed.abs_covariance / maxAbs;
+      var bkt = strengthBucket(w);
+      var ramp = ed.covariance >= 0 ? EDGE_RAMP_POS : EDGE_RAMP_NEG;
       var line = document.createElementNS(NS, "line");
-      line.setAttribute("x1", pos[ia].x.toFixed(1)); line.setAttribute("y1", pos[ia].y.toFixed(1));
-      line.setAttribute("x2", pos[ib].x.toFixed(1)); line.setAttribute("y2", pos[ib].y.toFixed(1));
-      line.setAttribute("stroke", ed.covariance >= 0 ? "#e0563b" : "#3b6fe0");
-      line.setAttribute("stroke-width", (0.4 + 2.4 * w).toFixed(2));
-      line.setAttribute("stroke-opacity", (0.15 + 0.6 * w).toFixed(2));
+      line.setAttribute("x1", pa.x.toFixed(1)); line.setAttribute("y1", pa.y.toFixed(1));
+      line.setAttribute("x2", pb.x.toFixed(1)); line.setAttribute("y2", pb.y.toFixed(1));
+      line.setAttribute("stroke", ramp[bkt]);
+      line.setAttribute("stroke-width", EDGE_WIDTH[bkt].toFixed(2));
+      line.setAttribute("stroke-opacity", EDGE_OPACITY[bkt].toFixed(2));
       (function (edge, ln) {
         ln.addEventListener("click", function () { showEdgeDetail(edge); });
         ln.addEventListener("mouseover", function () { ln.classList.add("hot"); });
@@ -530,23 +738,22 @@
       svg.appendChild(line);
     }
 
-    // nodes — shaped by RNA class (circle=gene, square=miRNA, diamond=snoRNA).
-    for (var n = 0; n < p; n++) {
-      var g = perm[n];
-      var gene = result.genes[g];
-      var r = p > 120 ? 2.4 : 4.2;
-      // Hubs render a touch larger, echoing the size-by-degree reference figure.
-      if (labelSet[gene]) { r += 2.2; }
-      var shape = nodeShape(NS, rnaType(gene), pos[g].x, pos[g].y, r, color[g]);
+    // Nodes — coloured by community, shaped by RNA class, sized by degree.
+    for (var ni = 0; ni < net.nodeIds.length; ni++) {
+      var gene = net.nodeIds[ni];
+      var p = pos[gene];
+      var deg = degree[gene] || 0;
+      var r = 3.0 + 5.5 * Math.sqrt(deg / maxDeg);
+      var fill = communityColor(comm[gene]);
+      var shape = nodeShape(NS, rnaType(gene), p.x, p.y, r, fill);
       shape.setAttribute("class", "node");
       shape.setAttribute("data-gene", gene);
-      shape.setAttribute("data-block", result.labels[g]);
       (function (gid) {
         shape.addEventListener("mousemove", function (ev) {
           var m = geneMeta(gid);
           tip.textContent = displayName(gid) +
             (m && m.rna_type ? "  ·  " + m.rna_type : "") +
-            "  ·  block " + result.labels[geneIndex[gid]];
+            "  ·  degree " + (degree[gid] || 0) + "  ·  community " + (comm[gid] + 1);
           tip.style.left = (ev.clientX + 12) + "px";
           tip.style.top = (ev.clientY + 12) + "px";
           tip.classList.remove("hidden");
@@ -558,12 +765,66 @@
       if (labelSet[gene]) {
         var txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "node-label");
-        txt.setAttribute("x", (pos[g].x + r + 1).toFixed(1));
-        txt.setAttribute("y", (pos[g].y + 3).toFixed(1));
+        txt.setAttribute("x", (p.x + r + 1).toFixed(1));
+        txt.setAttribute("y", (p.y + 3).toFixed(1));
         txt.textContent = displayName(gene);
         svg.appendChild(txt);
       }
     }
+
+    renderNetLegend(net);
+    renderHubTable(net, result);
+  }
+
+  // Legend: node shapes, edge-strength ramp, and Louvain communities + sizes.
+  function renderNetLegend(net) {
+    var host = $("net-legend");
+    if (!host) { return; }
+    if (!net) { host.innerHTML = ""; return; }
+    var html = "";
+    html += '<div class="lg-group"><div class="lg-title">Node type</div>' +
+      '<div class="lg-row"><span class="lg-shape circle"></span>Protein-coding gene</div>' +
+      '<div class="lg-row"><span class="lg-shape square"></span>miRNA</div>' +
+      '<div class="lg-row"><span class="lg-shape diamond"></span>snoRNA</div></div>';
+    html += '<div class="lg-group"><div class="lg-title">Edge strength</div>';
+    for (var s = 0; s < 4; s++) {
+      html += '<div class="lg-row"><span class="lg-line" style="background:' + EDGE_RAMP_POS[s] +
+        ';height:' + (EDGE_WIDTH[s] + 0.6).toFixed(1) + 'px"></span>' + STRENGTH_LABELS[s] + "</div>";
+    }
+    html += "</div>";
+    html += '<div class="lg-group"><div class="lg-title">Community (Louvain)</div>';
+    for (var c = 0; c < net.nComm; c++) {
+      html += '<div class="lg-row"><span class="lg-dot" style="background:' + communityColor(c) +
+        '"></span>Community ' + (c + 1) + '<span class="lg-n">n = ' + (net.commSize[c] || 0) + "</span></div>";
+    }
+    html += '<div class="lg-total">Total nodes = ' + net.nodeIds.length +
+      ' &middot; Edges shown = ' + net.nEdges + "</div>";
+    html += "</div>";
+    host.innerHTML = html;
+  }
+
+  // "Top hub nodes by degree" table, mirroring the reference figure.
+  function renderHubTable(net, result) {
+    var host = $("hub-panel");
+    if (!host) { return; }
+    if (!net) { host.classList.add("hidden"); return; }
+    var byDeg = net.nodeIds.slice().sort(function (a, b) { return (net.degree[b] || 0) - (net.degree[a] || 0); });
+    var rows = "";
+    var typeLabel = { protein_coding: "Protein-coding", miRNA: "miRNA", snoRNA: "snoRNA" };
+    for (var i = 0; i < Math.min(8, byDeg.length); i++) {
+      var g = byDeg[i];
+      var tp = rnaType(g);
+      rows += "<tr>" +
+        '<td><span class="lg-dot" style="background:' + communityColor(net.comm[g]) + '"></span>' +
+          esc(displayName(g)) + "</td>" +
+        "<td>" + esc(typeLabel[tp] || tp) + "</td>" +
+        '<td class="num">' + (net.degree[g] || 0) + "</td></tr>";
+    }
+    host.innerHTML =
+      "<h3>Top hub nodes by degree</h3>" +
+      '<table class="hub-table"><thead><tr><th>Node</th><th>Type</th><th>Degree</th></tr></thead>' +
+      "<tbody>" + rows + "</tbody></table>";
+    host.classList.remove("hidden");
   }
 
   // Build an SVG node marker shaped by RNA class, centred at (x, y).
@@ -736,5 +997,10 @@
   } else { init(); }
 
   // Exported for tests / debugging (harmless in the browser).
-  window.ADGENCOV = { blockOrder: blockOrder, divergingColor: divergingColor, fmt: fmt, _lastSource: null };
+  window.ADGENCOV = {
+    blockOrder: blockOrder, divergingColor: divergingColor, fmt: fmt,
+    louvain: louvain, forceLayout: forceLayout, geneHash: geneHash,
+    strengthBucket: strengthBucket, computeNetwork: computeNetwork,
+    _lastSource: null
+  };
 })();
