@@ -22,6 +22,7 @@ Two truth regimes are run:
   B) perturbed truth                          - block structure + a dense random
      perturbation, so the AD assumption is mildly misspecified.
 """
+import os
 import time
 import numpy as np
 
@@ -156,17 +157,38 @@ def main():
     sumA = run_regime("A: block-exchangeable (AD exact)", covA, p, labels, n_train, n_test, reps)
     sumB = run_regime("B: perturbed (AD misspecified)", covB, p, labels, n_train, n_test, reps)
 
+    # Regime C: genomics scale (GSE52778-like: p >> n, tiny n). This is the
+    # regime dad cares about -- LOO does n full refits per grid point, so its
+    # wall-clock explodes while EBIC stays one pass. Does its accuracy edge hold?
+    pC, nbC = 300, 6
+    labelsC = make_labels(pC, nbC)
+    covC0 = block_exchangeable_cov(pC, labelsC)
+    covC = perturb(covC0, scale=0.03, rng=RNG)
+    # Reps for the (expensive) genomics-scale regime are configurable so the
+    # CI bench workflow can trade wall-clock for tighter numbers via its `reps`
+    # input (BENCH_REPS_C). Defaults to 12 when run locally.
+    reps_c = int(os.environ.get("BENCH_REPS_C") or 12)
+    sumC = run_regime("C: genomics scale p>>n (perturbed)", covC, pC, labelsC,
+                      n_train=16, n_test=400, reps=reps_c)
+
     print("\n=== VERDICT ===")
     crits = ["loo", "ebic", "kfold"]
-    # combined mean regret across regimes (lower is better)
-    combined = {c: (sumA[c][1] + sumB[c][1]) / 2 for c in crits}
-    speed = {c: (sumA[c][3] + sumB[c][3]) / 2 for c in crits}
+    # combined mean regret across all three regimes (lower is better)
+    combined = {c: (sumA[c][1] + sumB[c][1] + sumC[c][1]) / 3 for c in crits}
+    speed = {c: (sumA[c][3] + sumB[c][3] + sumC[c][3]) / 3 for c in crits}
     order = sorted(crits, key=lambda c: combined[c])
     for c in order:
         print(f"  {c:8s}  mean regret={combined[c]:.4f}   sec/rep={speed[c]:.4f}")
     win = order[0]
     print(f"\n  WINNER (lowest generalization regret): {win.upper()}")
-    print(f"  Speedup vs LOO: {speed['loo']/speed[win]:.1f}x") if win != "loo" else None
+    if win != "loo":
+        print(f"  Speedup vs LOO: {speed['loo']/speed[win]:.1f}x")
+    # Scale story: how LOO's cost blows up at genomics p vs the fast methods
+    print("\n  --- genomics-scale (regime C) wall-clock per criterion ---")
+    for c in crits:
+        print(f"    {c:8s}  {sumC[c][3]:8.4f} sec/rep   regret={sumC[c][1]:.4f}")
+    print(f"    LOO is {sumC['loo'][3]/sumC['ebic'][3]:.1f}x slower than EBIC, "
+          f"{sumC['loo'][3]/sumC['kfold'][3]:.1f}x slower than KFOLD at p={pC}")
 
 
 if __name__ == "__main__":

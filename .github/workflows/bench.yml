@@ -1,0 +1,111 @@
+name: Bench (selection criteria)
+
+# Portable estimator-selection bench-off: LOO vs EBIC vs k-fold.
+#
+# This runs the scripts/bench_selection.py sweep in ONE fixed, reproducible
+# environment (a GitHub-hosted ubuntu-latest runner: same CPU class + RAM every
+# time) instead of on whatever machine an agent happens to live on. Any device
+# — laptop, phone, a mesh node, this box — kicks it the same way and reads the
+# same results, so the wall-clock numbers are comparable across runs.
+#
+# Kick it from anywhere:
+#   - GitHub UI: Actions -> "Bench (selection criteria)" -> Run workflow
+#   - CLI:       gh workflow run bench.yml -f reps=12
+#
+# Results land in two places, both readable from any device:
+#   - the run's Summary page (GITHUB_STEP_SUMMARY, rendered inline)
+#   - a downloadable "bench-results" artifact (bench_results.txt)
+
+on:
+  # Manual trigger only — the bench is expensive (LOO does n refits/candidate at
+  # genomics scale), so we don't burn it on every push. workflow_dispatch is the
+  # portable "kick the job remotely" entry point.
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: "Replicates for the genomics-scale regime C (higher = tighter numbers, slower)"
+        required: false
+        default: "12"
+
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: selection bench-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip numpy
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.deps
+          key: deps-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DADGENCOV_BUILD_CLI=OFF
+          -DADGENCOV_BUILD_TESTS=OFF
+          -DADGENCOV_BUILD_PYTHON=ON
+          -DPython_EXECUTABLE="${{ steps.python.outputs.python-path }}"
+          -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
+
+      - name: Build python module
+        run: cmake --build build --config Release --parallel
+
+      - name: Locate built module
+        id: mod
+        shell: bash
+        run: |
+          # The pybind11 target lands under build/; expose its dir on PYTHONPATH
+          # so `import adgencov` resolves the freshly-built _core.
+          modpath="$(dirname "$(find build -name '_core*.so' -print -quit)")"
+          echo "Found _core at: $modpath"
+          echo "pythonpath=$modpath:$PWD/python" >> "$GITHUB_OUTPUT"
+
+      - name: Run selection bench-off
+        env:
+          PYTHONPATH: ${{ steps.mod.outputs.pythonpath }}
+          BENCH_REPS_C: ${{ github.event.inputs.reps }}
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/bench_selection.py 2>&1 | tee bench_results.txt
+
+      - name: Publish results to run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## ADGENCOV selection bench-off"
+            echo ""
+            echo "Runner: \`ubuntu-latest\` · commit \`${GITHUB_SHA:0:8}\` · regime-C reps=\`${{ github.event.inputs.reps }}\`"
+            echo ""
+            echo '```'
+            cat bench_results.txt 2>/dev/null || echo "(no output captured — build or run failed; see the job log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench_results.txt
+          if-no-files-found: warn
