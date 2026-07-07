@@ -8,24 +8,40 @@ name: Bench (selection criteria)
 # — laptop, phone, a mesh node, this box — kicks it the same way and reads the
 # same results, so the wall-clock numbers are comparable across runs.
 #
-# Kick it from anywhere:
-#   - GitHub UI: Actions -> "Bench (selection criteria)" -> Run workflow
-#   - CLI:       gh workflow run bench.yml -f reps=12
+# Kick it from anywhere — no `gh` CLI needed:
+#   - Any box with git+SSH:  git tag bench-$(date +%s) && git push origin --tags
+#   - GitHub UI:             Actions -> "Bench (selection criteria)" -> Run workflow
+#   - CLI (if gh present):   gh workflow run bench.yml -f reps=12
 #
-# Results land in two places, both readable from any device:
+# Results land in THREE places, all readable from any device:
+#   - the `bench-results` branch (git fetch origin bench-results) — no gh/browser
 #   - the run's Summary page (GITHUB_STEP_SUMMARY, rendered inline)
 #   - a downloadable "bench-results" artifact (bench_results.txt)
 
 on:
-  # Manual trigger only — the bench is expensive (LOO does n refits/candidate at
-  # genomics scale), so we don't burn it on every push. workflow_dispatch is the
-  # portable "kick the job remotely" entry point.
+  # Two portable, device-independent triggers — neither needs the `gh` CLI:
+  #
+  #   1. workflow_dispatch — kick from the GitHub UI (or `gh` if you have it).
+  #   2. push of a `bench-*` tag — kick from ANY box with git+SSH:
+  #        git tag bench-$(date +%s) && git push origin --tags
+  #      The bench is expensive (LOO does n refits/candidate at genomics scale),
+  #      so a dedicated tag is the deliberate "run it now" signal — it never
+  #      fires on ordinary code pushes.
   workflow_dispatch:
     inputs:
       reps:
         description: "Replicates for the genomics-scale regime C (higher = tighter numbers, slower)"
         required: false
         default: "12"
+  push:
+    tags:
+      - "bench-*"
+
+# The job commits its results back to the `bench-results` branch so any device
+# with git+SSH can `git fetch origin bench-results` and read the numbers — no
+# `gh`, no browser, no Actions-artifact download required.
+permissions:
+  contents: write
 
 concurrency:
   group: bench-${{ github.workflow }}-${{ github.ref }}
@@ -82,7 +98,9 @@ jobs:
       - name: Run selection bench-off
         env:
           PYTHONPATH: ${{ steps.mod.outputs.pythonpath }}
-          BENCH_REPS_C: ${{ github.event.inputs.reps }}
+          # inputs.reps is empty on a tag-push trigger — fall back to 12 so the
+          # bench runs identically no matter which trigger fired it.
+          BENCH_REPS_C: ${{ github.event.inputs.reps || '12' }}
         shell: bash
         run: |
           set -o pipefail
@@ -109,3 +127,60 @@ jobs:
           name: bench-results
           path: bench_results.txt
           if-no-files-found: warn
+
+      - name: Commit results back to bench-results branch
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN_UNUSED: "no gh here — plain git over the runner's checkout token"
+        run: |
+          # Publish results to a dedicated orphan-style branch so ANY device with
+          # git+SSH can read them: `git fetch origin bench-results` then open the
+          # file. No gh CLI, no browser, no artifact download.
+          set -euo pipefail
+
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          sha="${GITHUB_SHA:0:8}"
+          outfile="results/bench-${stamp}-${sha}.txt"
+
+          git config user.name  "adgencov-bench-bot"
+          git config user.email "bench-bot@users.noreply.github.com"
+
+          # Work in a fresh worktree on the results branch so we don't disturb the
+          # build tree. Create the branch if it doesn't exist yet.
+          tmp="$(mktemp -d)"
+          if git ls-remote --exit-code --heads origin bench-results >/dev/null 2>&1; then
+            git fetch origin bench-results
+            git worktree add "$tmp" origin/bench-results
+            git -C "$tmp" checkout -B bench-results
+          else
+            git worktree add --detach "$tmp"
+            git -C "$tmp" checkout --orphan bench-results
+            git -C "$tmp" rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p "$tmp/results"
+          cp bench_results.txt "$tmp/$outfile" 2>/dev/null || \
+            echo "(no output captured — build or run failed; see the job log)" > "$tmp/$outfile"
+          cp "$tmp/$outfile" "$tmp/results/latest.txt"
+
+          {
+            echo "# ADGENCOV selection bench-off — results index"
+            echo ""
+            echo "Latest: \`results/latest.txt\`. Each run also archived by timestamp+sha."
+            echo ""
+            echo "Read from any device with git+SSH:"
+            echo '```'
+            echo "git fetch origin bench-results && git show origin/bench-results:results/latest.txt"
+            echo '```'
+          } > "$tmp/README.md"
+
+          git -C "$tmp" add -A
+          if git -C "$tmp" diff --cached --quiet; then
+            echo "No result changes to commit."
+          else
+            git -C "$tmp" commit -m "bench results ${stamp} (${sha}) [skip ci]"
+            git -C "$tmp" push origin bench-results
+            echo "Pushed results to bench-results:$outfile"
+          fi
+          git worktree remove --force "$tmp" || true
