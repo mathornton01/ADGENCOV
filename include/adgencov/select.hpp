@@ -51,8 +51,27 @@ struct EstimatorSpec {
 struct EstimatorResult {
   EstimatorSpec spec;             ///< method + parameters
   Eigen::MatrixXd covariance;     ///< full-data estimate (make_pd'd, SPD)
-  double loo_nll;                 ///< leave-one-out cross-validated NLL (lower is better)
+  double loo_nll;                 ///< selection score under the chosen criterion,
+                                  ///< lower is better (leave-one-out NLL by
+                                  ///< default; EBIC or k-fold NLL when selected)
   double condition_number;        ///< 2-norm condition number of @c covariance
+};
+
+/// The model-selection criterion @c recommend_estimator ranks candidates by.
+/// All three are on a "lower is better" scale, so they are drop-in substitutes.
+enum class SelectionCriterion {
+  Loo,    ///< exact leave-one-out CV NLL (default; @c n refits per candidate)
+  Ebic,   ///< Extended BIC penalized likelihood (one full-sample pass; ~n× faster)
+  Kfold,  ///< k-fold CV NLL (@c k refits per candidate; between Loo and Ebic)
+};
+
+/// A criterion choice plus the hyper-parameters its variants need.  Default
+/// constructs to leave-one-out, so passing @c CriterionSpec{} — or omitting it
+/// entirely — reproduces the historical behaviour exactly.
+struct CriterionSpec {
+  SelectionCriterion type = SelectionCriterion::Loo;
+  double gamma = 0.5;  ///< EBIC penalty in [0, 1] (0 = ordinary BIC); Ebic only
+  int k = 5;           ///< number of folds; Kfold only
 };
 
 /// Dispatch to the estimator named by @c spec on samples-by-genes matrix @c X
@@ -175,6 +194,20 @@ std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
 /// @c sym, sorted ascending by leave-one-out NLL.
 std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
                                                  const PairSymmetry& sym);
+
+/// Criterion-parameterized overload: rank the grid by @c crit (leave-one-out,
+/// EBIC, or k-fold) instead of the fixed leave-one-out default.  The returned
+/// @c EstimatorResult::loo_nll field carries whichever criterion score was used;
+/// results are always sorted ascending (best first).  With @c crit defaulted the
+/// result is identical to the two-argument overload above.
+std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
+                                                 const std::vector<int>& labels,
+                                                 const CriterionSpec& crit);
+
+/// General-symmetry, criterion-parameterized overload of @c recommend_estimator.
+std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
+                                                 const PairSymmetry& sym,
+                                                 const CriterionSpec& crit);
 
 }  // namespace adgencov
 

@@ -269,7 +269,9 @@ double kfold_with_projector(const Eigen::MatrixXd& X, const ProjectFn& project,
 }
 
 std::vector<EstimatorResult> recommend_with_projector(const Eigen::MatrixXd& X,
-                                                      const ProjectFn& project) {
+                                                      const ProjectFn& project,
+                                                      const PairSymmetry& sym,
+                                                      const CriterionSpec& crit) {
   const auto grid = candidate_grid(static_cast<int>(X.cols()),
                                    static_cast<int>(X.rows()));
   std::vector<EstimatorResult> results;
@@ -277,7 +279,19 @@ std::vector<EstimatorResult> recommend_with_projector(const Eigen::MatrixXd& X,
 
   for (const auto& spec : grid) {
     try {
-      const double score = loo_with_projector(X, project, spec);
+      double score;
+      switch (crit.type) {
+        case SelectionCriterion::Ebic:
+          score = ebic_with_projector(X, project, sym, spec, crit.gamma);
+          break;
+        case SelectionCriterion::Kfold:
+          score = kfold_with_projector(X, project, spec, crit.k);
+          break;
+        case SelectionCriterion::Loo:
+        default:
+          score = loo_with_projector(X, project, spec);
+          break;
+      }
       const Eigen::MatrixXd Sigma = estimate_with_projector(X, project, spec);
       // 2-norm condition number of an SPD matrix = lambda_max / lambda_min.
       Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Sigma);
@@ -451,21 +465,34 @@ std::vector<EstimatorSpec> candidate_grid(int /*p*/, int /*n*/) {
 }
 
 std::vector<EstimatorResult> recommend_estimator(
-    const Eigen::MatrixXd& X, const std::vector<int>& labels) {
+    const Eigen::MatrixXd& X, const std::vector<int>& labels,
+    const CriterionSpec& crit) {
   if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
     throw std::invalid_argument(
         "recommend_estimator: labels length must equal number of genes (cols)");
   }
-  return recommend_with_projector(X, block_projector(labels));
+  const PairSymmetry sym = pair_symmetry_from_labels(labels);
+  return recommend_with_projector(X, block_projector(labels), sym, crit);
 }
 
 std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
-                                                 const PairSymmetry& sym) {
+                                                 const PairSymmetry& sym,
+                                                 const CriterionSpec& crit) {
   if (sym.p != static_cast<int>(X.cols())) {
     throw std::invalid_argument(
         "recommend_estimator: sym.p must equal number of genes (cols)");
   }
-  return recommend_with_projector(X, symmetry_projector(sym));
+  return recommend_with_projector(X, symmetry_projector(sym), sym, crit);
+}
+
+std::vector<EstimatorResult> recommend_estimator(
+    const Eigen::MatrixXd& X, const std::vector<int>& labels) {
+  return recommend_estimator(X, labels, CriterionSpec{});
+}
+
+std::vector<EstimatorResult> recommend_estimator(const Eigen::MatrixXd& X,
+                                                 const PairSymmetry& sym) {
+  return recommend_estimator(X, sym, CriterionSpec{});
 }
 
 }  // namespace adgencov

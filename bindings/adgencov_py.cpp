@@ -155,6 +155,25 @@ Returns
                ", cond=" + std::to_string(r.condition_number) + ")";
       });
 
+  py::enum_<SelectionCriterion>(m, "SelectionCriterion",
+                                "Model-selection criterion for recommend_estimator.")
+      .value("Loo", SelectionCriterion::Loo, "Exact leave-one-out CV NLL (default).")
+      .value("Ebic", SelectionCriterion::Ebic, "Extended BIC penalized likelihood.")
+      .value("Kfold", SelectionCriterion::Kfold, "k-fold CV NLL.");
+
+  py::class_<CriterionSpec>(m, "CriterionSpec",
+                            "Selection criterion plus its hyper-parameters; "
+                            "defaults to leave-one-out.")
+      .def(py::init<>())
+      .def(py::init([](SelectionCriterion type, double gamma, int k) {
+             return CriterionSpec{type, gamma, k};
+           }),
+           py::arg("type") = SelectionCriterion::Loo, py::arg("gamma") = 0.5,
+           py::arg("k") = 5)
+      .def_readwrite("type", &CriterionSpec::type)
+      .def_readwrite("gamma", &CriterionSpec::gamma)
+      .def_readwrite("k", &CriterionSpec::k);
+
   // Bound with the struct spec...
   m.def("estimate_covariance",
         py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
@@ -264,6 +283,19 @@ Returns
         py::call_guard<py::gil_scoped_release>(),
         "General-symmetry overload: score the grid projecting AD variants through "
         "the commutant of an arbitrary PairSymmetry, sorted ascending by LOO-NLL.");
+  m.def("recommend_estimator",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
+                          const CriterionSpec&>(&recommend_estimator),
+        py::arg("X"), py::arg("labels"), py::arg("criterion"),
+        py::call_guard<py::gil_scoped_release>(),
+        "Rank the grid by the given CriterionSpec (loo/ebic/kfold); the "
+        "EstimatorResult.loo_nll field carries the chosen criterion's score.");
+  m.def("recommend_estimator",
+        py::overload_cast<const Eigen::MatrixXd&, const PairSymmetry&,
+                          const CriterionSpec&>(&recommend_estimator),
+        py::arg("X"), py::arg("sym"), py::arg("criterion"),
+        py::call_guard<py::gil_scoped_release>(),
+        "General-symmetry, criterion-parameterized overload of recommend_estimator.");
 
   // ---- clustering.hpp ----------------------------------------------------
   m.def("agglomerative_average", &agglomerative_average, py::arg("dist"),
