@@ -41,6 +41,7 @@ from ._core import (  # noqa: F401
     agglomerative_average,
     build_group_labels,
     candidate_grid,
+    ebic_score,
     estimate_covariance,
     factorize,
     gaussian_nll_one,
@@ -74,6 +75,7 @@ __all__ = [
     "agglomerative_average",
     "build_group_labels",
     "candidate_grid",
+    "ebic_score",
     "estimate_covariance",
     "factorize",
     "gaussian_nll_one",
@@ -249,25 +251,53 @@ def _kfold_nll(
     return total / n
 
 
+#: The selection criteria :func:`analyze` (and the API/UI) accept.  All three
+#: are on a "lower is better" scale, so they substitute for one another directly.
+CRITERIA = ("loo", "ebic", "kfold")
+
+
+def _resolve_criterion(
+    criterion: Optional[str], cv_folds: Optional[int]
+) -> str:
+    """Map the public (criterion, cv_folds) knobs onto one of :data:`CRITERIA`.
+
+    ``criterion`` takes precedence when given.  For backward compatibility a bare
+    ``cv_folds=k`` (with the default ``criterion``) still selects k-fold CV, so
+    existing callers keep their behaviour unchanged.
+    """
+    crit = (criterion or "loo").lower()
+    if crit not in CRITERIA:
+        raise ValueError(f"criterion must be one of {CRITERIA}, got {criterion!r}")
+    if crit == "loo" and cv_folds is not None:
+        return "kfold"
+    return crit
+
+
 def _score_one(
     X: np.ndarray,
     labels: List[int],
     spec: Any,
     cv_folds: Optional[int] = None,
+    criterion: str = "loo",
+    ebic_gamma: float = 0.5,
 ) -> Optional[_RankedEstimator]:
     """Score a single candidate; return ``None`` if it fails to estimate.
 
-    The heavy calls (:func:`loo_nll` / :func:`_kfold_nll`,
+    The heavy calls (:func:`loo_nll` / :func:`_kfold_nll` / :func:`ebic_score`,
     :func:`estimate_covariance`) run in the C++ core with the GIL released, so
-    calling this from a thread pool yields genuine multi-core parallelism.  With
-    ``cv_folds`` set, scoring uses k-fold CV instead of exact leave-one-out.
+    calling this from a thread pool yields genuine multi-core parallelism.  The
+    ``criterion`` picks the scoring rule: ``"loo"`` (exact leave-one-out CV,
+    default), ``"kfold"`` (k-fold CV with ``cv_folds`` folds, default 5), or
+    ``"ebic"`` (one-pass Extended BIC with penalty ``ebic_gamma``).
     """
     try:
-        score = (
-            _kfold_nll(X, labels, spec, cv_folds)
-            if cv_folds is not None
-            else loo_nll(X, labels, spec)
-        )
+        crit = _resolve_criterion(criterion, cv_folds)
+        if crit == "ebic":
+            score = ebic_score(X, labels, spec, ebic_gamma)
+        elif crit == "kfold":
+            score = _kfold_nll(X, labels, spec, cv_folds if cv_folds is not None else 5)
+        else:
+            score = loo_nll(X, labels, spec)
         Sigma = np.asarray(estimate_covariance(X, labels, spec), dtype=float)
         # 2-norm condition number of an SPD matrix = |lambda|_max / |lambda|_min.
         ev = np.abs(np.linalg.eigvalsh(Sigma))
@@ -298,6 +328,8 @@ def _rank_estimators(
     labels: List[int],
     progress: Optional[Callable[[float, str], None]] = None,
     cv_folds: Optional[int] = None,
+    criterion: str = "loo",
+    ebic_gamma: float = 0.5,
 ) -> List[_RankedEstimator]:
     """Score the candidate grid, ascending by CV NLL, reporting per-candidate
     progress.  With ``cv_folds=None`` (default) this is numerically identical to
@@ -318,7 +350,9 @@ def _rank_estimators(
 
     with ThreadPoolExecutor(max_workers=_max_workers(total)) as pool:
         futures = {
-            pool.submit(_score_one, X, labels, spec, cv_folds): i
+            pool.submit(
+                _score_one, X, labels, spec, cv_folds, criterion, ebic_gamma
+            ): i
             for i, spec in enumerate(grid)
         }
         for fut, idx in _as_completed_pairs(futures):
@@ -352,6 +386,8 @@ def analyze(
     top_fraction: float = 0.01,
     progress: Optional[Callable[[float, str], None]] = None,
     cv_folds: Optional[int] = None,
+    criterion: str = "loo",
+    ebic_gamma: float = 0.5,
 ) -> AnalysisResult:
     """Run the recommender end-to-end on a standardized samples-by-genes matrix.
 
@@ -379,6 +415,15 @@ def analyze(
         fits, so much faster on large sample counts, at the cost of a slightly
         different (higher-variance) score.  The recommended estimator is usually
         unchanged; use it to trade a little selection precision for speed.
+    criterion : {"loo", "ebic", "kfold"}, optional
+        Model-selection rule for ranking the estimator grid.  ``"loo"`` (default)
+        is exact leave-one-out CV; ``"kfold"`` is k-fold CV (``cv_folds`` folds,
+        default 5); ``"ebic"`` is one-pass Extended BIC — ``~n`` times cheaper
+        than leave-one-out — with the ``ebic_gamma`` high-dimensional penalty.
+        A bare ``cv_folds=k`` still implies k-fold for backward compatibility.
+    ebic_gamma : float, optional
+        Extended BIC penalty in ``[0, 1]`` used only when ``criterion="ebic"``
+        (``0`` = ordinary BIC; larger is more conservative for ``p >> n``).
 
     Returns
     -------
@@ -391,7 +436,14 @@ def analyze(
         genes = [f"gene_{i}" for i in range(p)]
     else:
         genes = list(genes)
-    ranking = _rank_estimators(X, labels, progress=progress, cv_folds=cv_folds)
+    ranking = _rank_estimators(
+        X,
+        labels,
+        progress=progress,
+        cv_folds=cv_folds,
+        criterion=criterion,
+        ebic_gamma=ebic_gamma,
+    )
     if not ranking:
         raise RuntimeError("no estimator in the grid produced a valid fit")
     edges = top_edges(np.asarray(ranking[0].covariance), genes, top_fraction)

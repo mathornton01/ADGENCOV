@@ -93,6 +93,10 @@
 
   // -- request assembly ----------------------------------------------------
   function commonParams() {
+    // The selection criterion picks how the estimator grid is ranked, entirely
+    // server-side: loo = exact leave-one-out, kfold = 10-fold CV (fast), ebic =
+    // one-pass Extended BIC (fastest). cv_folds is only meaningful for kfold.
+    var criterion = $("criterion").value;
     return {
       n_genes: parseInt($("n_genes").value, 10),
       min_mean: parseFloat($("min_mean").value),
@@ -100,9 +104,9 @@
       group: $("group").value,
       n_blocks: parseInt($("n_blocks").value, 10),
       top_fraction: parseFloat($("top_fraction").value),
-      // Fast mode scores the estimator grid with 10-fold CV instead of exact
-      // leave-one-out — much faster on large sample counts. null = exact LOO.
-      cv_folds: $("fast_cv").checked ? 10 : null
+      criterion: criterion,
+      ebic_gamma: parseFloat($("ebic_gamma").value),
+      cv_folds: criterion === "kfold" ? 10 : null
     };
   }
 
@@ -130,6 +134,8 @@
     fd.append("group", p.group);
     fd.append("n_blocks", p.n_blocks);
     fd.append("top_fraction", p.top_fraction);
+    fd.append("criterion", p.criterion);
+    fd.append("ebic_gamma", p.ebic_gamma);
     if (p.cv_folds != null) { fd.append("cv_folds", p.cv_folds); }
     fd.append("sample_regex", $("sample_regex").value);
     fd.append("gene_col", $("gene_col").value);
@@ -1071,6 +1077,12 @@
       hide($("edge-detail")); hide($("cell-detail"));
       if (LAST) { resolveSymbols(LAST.result.genes); }
     });
+    // Reveal the EBIC penalty field only when the EBIC criterion is selected.
+    function syncCriterion() {
+      $("ebic-gamma-field").classList.toggle("hidden", $("criterion").value !== "ebic");
+    }
+    $("criterion").addEventListener("change", syncCriterion);
+    syncCriterion();
     selectSource("geo");
     loadVersion();
   }

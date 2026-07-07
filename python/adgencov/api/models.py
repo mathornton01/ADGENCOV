@@ -45,6 +45,25 @@ class AnalyzeParams(BaseModel):
             "usually unchanged). Typical fast value: 10."
         ),
     )
+    criterion: str = Field(
+        "loo",
+        pattern="^(loo|ebic|kfold)$",
+        description=(
+            "Model-selection criterion for ranking the estimator grid: 'loo' "
+            "(exact leave-one-out CV, default), 'kfold' (k-fold CV, cv_folds "
+            "folds), or 'ebic' (one-pass Extended BIC — ~n times faster than "
+            "leave-one-out — using ebic_gamma). Runs server-side per dataset."
+        ),
+    )
+    ebic_gamma: float = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Extended BIC penalty in [0, 1], used only when criterion='ebic' "
+            "(0 = ordinary BIC; larger is more conservative for p >> n)."
+        ),
+    )
 
 
 class UploadParams(AnalyzeParams):

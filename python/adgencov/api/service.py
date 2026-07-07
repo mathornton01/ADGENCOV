@@ -93,6 +93,8 @@ def run_upload_analysis(
         top_fraction=params.top_fraction,
         progress=_band(report, 0.20, 0.98),
         cv_folds=params.cv_folds,
+        criterion=params.criterion,
+        ebic_gamma=params.ebic_gamma,
     )
     payload = result.to_dict()
     payload["source"] = {"kind": "upload"}
@@ -120,6 +122,8 @@ def run_geo_analysis(
         force=req.force,
         progress=report,
         cv_folds=req.cv_folds,
+        criterion=req.criterion,
+        ebic_gamma=req.ebic_gamma,
     )
     payload = result.to_dict()
     payload["source"] = {"kind": "geo", "accession": req.accession}

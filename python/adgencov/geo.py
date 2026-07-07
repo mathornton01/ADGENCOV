@@ -1340,6 +1340,8 @@ def analyze_series(
     force: bool = False,
     progress: Optional[Any] = None,
     cv_folds: Optional[int] = None,
+    criterion: str = "loo",
+    ebic_gamma: float = 0.5,
 ) -> AnalysisResult:
     """Run the full recommender on a GEO series — pull → preprocess → analyze.
 
@@ -1395,5 +1397,7 @@ def analyze_series(
         top_fraction=top_fraction,
         progress=scaled,
         cv_folds=cv_folds,
+        criterion=criterion,
+        ebic_gamma=ebic_gamma,
     )
     return result
