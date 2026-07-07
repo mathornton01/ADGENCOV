@@ -197,6 +197,58 @@ Returns
       py::call_guard<py::gil_scoped_release>(),
       "Convenience form: loo_nll(X, labels, method, params_dict).");
 
+  // Penalized-likelihood (Extended BIC) selection criterion — a single
+  // full-sample pass per candidate, no refit loop.
+  m.def("ebic_score",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
+                          const EstimatorSpec&, double>(&ebic_score),
+        py::arg("X"), py::arg("labels"), py::arg("spec"), py::arg("gamma") = 0.5,
+        py::call_guard<py::gil_scoped_release>(),
+        "Extended BIC (Foygel & Drton) of a candidate: -2*loglik + dim*log(n) + "
+        "4*gamma*edges*log(p), computed in one full-sample pass. Lower is better.");
+  m.def(
+      "ebic_score",
+      [](const Eigen::MatrixXd& X, const std::vector<int>& labels,
+         const std::string& method, std::map<std::string, double> params,
+         double gamma) {
+        return ebic_score(X, labels, EstimatorSpec{method, std::move(params)}, gamma);
+      },
+      py::arg("X"), py::arg("labels"), py::arg("method"),
+      py::arg("params") = std::map<std::string, double>{}, py::arg("gamma") = 0.5,
+      py::call_guard<py::gil_scoped_release>(),
+      "Convenience form: ebic_score(X, labels, method, params_dict, gamma).");
+
+  m.def(
+      "effective_df",
+      [](const EstimatorSpec& spec, const std::vector<int>& labels,
+         const Eigen::MatrixXd& Sigma, double tol) {
+        const PairSymmetry sym = pair_symmetry_from_labels(labels);
+        int edges = 0;
+        const int dim = effective_df(spec, sym, Sigma, tol, &edges);
+        return std::make_pair(dim, edges);
+      },
+      py::arg("spec"), py::arg("labels"), py::arg("Sigma"), py::arg("tol") = 1e-8,
+      "Effective model dimension (total, edges) of an estimate under the "
+      "block symmetry from `labels`; the df the EBIC penalty charges for.");
+
+  // k-fold cross-validated NLL selection criterion (contiguous unshuffled folds).
+  m.def("kfold_nll",
+        py::overload_cast<const Eigen::MatrixXd&, const std::vector<int>&,
+                          const EstimatorSpec&, int>(&kfold_nll),
+        py::arg("X"), py::arg("labels"), py::arg("spec"), py::arg("k"),
+        py::call_guard<py::gil_scoped_release>(),
+        "k-fold CV mean Gaussian NLL (k contiguous folds; k refits per candidate).");
+  m.def(
+      "kfold_nll",
+      [](const Eigen::MatrixXd& X, const std::vector<int>& labels,
+         const std::string& method, std::map<std::string, double> params, int k) {
+        return kfold_nll(X, labels, EstimatorSpec{method, std::move(params)}, k);
+      },
+      py::arg("X"), py::arg("labels"), py::arg("method"),
+      py::arg("params") = std::map<std::string, double>{}, py::arg("k"),
+      py::call_guard<py::gil_scoped_release>(),
+      "Convenience form: kfold_nll(X, labels, method, params_dict, k).");
+
   m.def("candidate_grid", &candidate_grid, py::arg("p"), py::arg("n"),
         "The conservative candidate grid for a (p genes, n samples) problem.");
   m.def("recommend_estimator",

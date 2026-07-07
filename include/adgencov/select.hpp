@@ -99,6 +99,65 @@ double loo_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
 double loo_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
                const EstimatorSpec& spec);
 
+/// Effective number of free parameters ("degrees of freedom") of the covariance
+/// estimate @c Sigma produced by @c spec, given the symmetry @c sym.
+///
+/// This is the model dimension that the penalized-likelihood criterion
+/// (@c ebic_score) charges for.  For a symmetry-projected AD estimator the
+/// covariance is constant on the orbits of @c sym, so its free parameters are
+/// the *orbits* carrying a non-negligible value (|entry| > @c tol): the AD
+/// projection is a hard linear constraint that collapses the p(p+1)/2 raw
+/// covariance parameters down to the commutant dimension.  For an unconstrained
+/// (dense) estimator — the plain sample/ridge/LW/OAS family and the softer
+/// AD-target mixtures, which are *not* orbit-constant — every non-negligible
+/// upper-triangular entry counts as its own parameter.  Sparse (soft-threshold)
+/// estimators drop the parameters they zero out.
+///
+/// Returns the total dimension (diagonal + off-diagonal parameters).  When
+/// @c n_edges is non-null it also receives the off-diagonal ("edge") count,
+/// which the Extended BIC penalizes separately.
+int effective_df(const EstimatorSpec& spec, const PairSymmetry& sym,
+                 const Eigen::MatrixXd& Sigma, double tol = 1e-8,
+                 int* n_edges = nullptr);
+
+/// Extended Bayesian Information Criterion (Foygel & Drton, 2010) of @c spec on
+/// @c X — a penalized-likelihood score computed in a SINGLE full-sample pass
+/// (no per-fold refit loop):
+///
+///   EBIC_gamma = -2 * loglik(Sigma_hat) + dim * log(n)
+///                + 4 * gamma * n_edges * log(p),
+///
+/// where @c Sigma_hat is the estimator fit on the full sample, @c loglik is the
+/// Gaussian log-likelihood of the full sample under N(xbar, Sigma_hat), @c dim /
+/// @c n_edges are the effective_df of the estimate, and @c gamma in [0, 1] tunes
+/// the extra high-dimensional penalty (gamma = 0 reduces to ordinary BIC; larger
+/// gamma is more conservative for p >> n).  Lower is better, on the same
+/// deviance scale for all candidates, so it substitutes directly for @c loo_nll
+/// as a selection criterion.  Because it fits each candidate exactly once, it is
+/// ~n times cheaper than leave-one-out CV.
+double ebic_score(const Eigen::MatrixXd& X, const std::vector<int>& labels,
+                  const EstimatorSpec& spec, double gamma = 0.5);
+
+/// General-symmetry overload of @c ebic_score (AD variants project through @c sym
+/// and the effective_df is counted over @c sym's orbits).
+double ebic_score(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+                  const EstimatorSpec& spec, double gamma = 0.5);
+
+/// k-fold cross-validated mean Gaussian NLL of @c spec on @c X.  The @c n rows
+/// are split into @c k contiguous, unshuffled folds (matching
+/// numpy.array_split / sklearn KFold(shuffle=False)); each held-out row is scored
+/// once under the Gaussian fit on the other folds, and the mean over all @c n
+/// rows is returned — the same scale as @c loo_nll but with @c k refits instead
+/// of @c n, so it is a faster, higher-variance cross-validation criterion.
+/// @c k is clamped to [2, n].
+/// @throws std::invalid_argument if any training fold has fewer than 3 rows.
+double kfold_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
+                 const EstimatorSpec& spec, int k);
+
+/// General-symmetry overload of @c kfold_nll (AD variants project through @c sym).
+double kfold_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+                 const EstimatorSpec& spec, int k);
+
 /// The conservative candidate grid used by @c recommend_estimator, depending on
 /// the problem shape (p genes, n samples).  Mirrors the prototype's
 /// candidate_grid: a ridge sweep, the four data-driven shrinkers, and a

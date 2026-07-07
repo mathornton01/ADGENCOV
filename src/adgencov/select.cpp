@@ -160,6 +160,114 @@ double loo_with_projector(const Eigen::MatrixXd& X, const ProjectFn& project,
   return total / dn;
 }
 
+// True for the projection-first AD estimators whose covariance is *constant on
+// the symmetry orbits* (ad_ridge, ad_sample, ad_lasso, ad_elastic_net,
+// ad_linear_lw, ad_oas).  The softer AD-target mixtures (ad_target_*) blend the
+// raw covariance with its projection, so they are NOT orbit-constant and are
+// counted as dense estimators for the effective-df below.
+bool is_projection_first_ad(const std::string& m) {
+  return m.rfind("ad_", 0) == 0 && m.rfind("ad_target", 0) != 0;
+}
+
+// Total effective df and the off-diagonal ("edge") count of Sigma under sym.
+int model_dim(const EstimatorSpec& spec, const PairSymmetry& sym,
+              const Eigen::MatrixXd& Sigma, double tol, int* n_edges) {
+  const Eigen::Index p = Sigma.rows();
+  int diag = 0, edges = 0;
+
+  if (is_projection_first_ad(spec.method)) {
+    // Symmetry-reduced: one parameter per orbit that carries a nonzero value.
+    // Orbits are wholly diagonal or wholly off-diagonal (a permutation maps the
+    // diagonal to itself), so the first-seen member's kind classifies the orbit.
+    std::vector<char> seen(static_cast<std::size_t>(sym.n_orbits), 0);
+    std::vector<char> is_diag(static_cast<std::size_t>(sym.n_orbits), 0);
+    for (Eigen::Index i = 0; i < p; ++i) {
+      for (Eigen::Index j = i; j < p; ++j) {
+        if (std::abs(Sigma(i, j)) <= tol) continue;
+        const int oid =
+            sym.orbit_of[static_cast<std::size_t>(i) * sym.p + static_cast<std::size_t>(j)];
+        if (!seen[static_cast<std::size_t>(oid)]) {
+          seen[static_cast<std::size_t>(oid)] = 1;
+          is_diag[static_cast<std::size_t>(oid)] = (i == j) ? 1 : 0;
+        }
+      }
+    }
+    for (int o = 0; o < sym.n_orbits; ++o) {
+      if (!seen[static_cast<std::size_t>(o)]) continue;
+      if (is_diag[static_cast<std::size_t>(o)]) ++diag; else ++edges;
+    }
+  } else {
+    // Dense: every nonzero upper-triangular entry is its own free parameter.
+    for (Eigen::Index i = 0; i < p; ++i)
+      for (Eigen::Index j = i; j < p; ++j)
+        if (std::abs(Sigma(i, j)) > tol) { if (i == j) ++diag; else ++edges; }
+  }
+  if (n_edges) *n_edges = edges;
+  return diag + edges;
+}
+
+// One-pass Extended BIC given data X, a projector, and the symmetry the df is
+// counted over.  Fits Sigma once on the full sample, scores the in-sample
+// Gaussian deviance, and adds the EBIC penalty.
+double ebic_with_projector(const Eigen::MatrixXd& X, const ProjectFn& project,
+                           const PairSymmetry& sym, const EstimatorSpec& spec,
+                           double gamma) {
+  const Eigen::Index n = X.rows();
+  const Eigen::Index p = X.cols();
+  if (n < 2) {
+    throw std::invalid_argument("ebic_score: need >= 2 samples");
+  }
+  const Eigen::MatrixXd Sigma = estimate_with_projector(X, project, spec);
+  const Eigen::VectorXd mu = X.colwise().mean().transpose();
+
+  double nll_total = 0.0;  // sum_i -log N(x_i) == -loglik
+  for (Eigen::Index i = 0; i < n; ++i) {
+    nll_total += gaussian_nll_one(X.row(i).transpose(), mu, Sigma);
+  }
+  const double neg2ll = 2.0 * nll_total;
+
+  int edges = 0;
+  const int dim = model_dim(spec, sym, Sigma, 1e-8, &edges);
+  const double dn = static_cast<double>(n);
+  const double dp = static_cast<double>(p);
+  return neg2ll + static_cast<double>(dim) * std::log(dn) +
+         4.0 * gamma * static_cast<double>(edges) * std::log(dp);
+}
+
+// k-fold CV mean NLL with contiguous, unshuffled folds (numpy.array_split): the
+// first (n mod k) folds hold one extra row.  Refits the estimator once per fold.
+double kfold_with_projector(const Eigen::MatrixXd& X, const ProjectFn& project,
+                            const EstimatorSpec& spec, int k) {
+  const Eigen::Index n = X.rows();
+  const Eigen::Index p = X.cols();
+  if (k < 2) k = 2;
+  if (static_cast<Eigen::Index>(k) > n) k = static_cast<int>(n);
+  const Eigen::Index base = n / k;
+  const Eigen::Index rem = n % k;
+
+  double total = 0.0;
+  Eigen::Index start = 0;
+  for (int f = 0; f < k; ++f) {
+    const Eigen::Index size = base + (static_cast<Eigen::Index>(f) < rem ? 1 : 0);
+    if (size == 0) continue;
+    const Eigen::Index ntr = n - size;
+    if (ntr < 3) {
+      throw std::invalid_argument(
+          "kfold_nll: training fold has < 3 rows for an unbiased covariance");
+    }
+    Eigen::MatrixXd Xtr(ntr, p);
+    Xtr.topRows(start) = X.topRows(start);
+    Xtr.bottomRows(n - (start + size)) = X.bottomRows(n - (start + size));
+    const Eigen::VectorXd mu = Xtr.colwise().mean().transpose();
+    const Eigen::MatrixXd Sigma = estimate_with_projector(Xtr, project, spec);
+    for (Eigen::Index i = start; i < start + size; ++i) {
+      total += gaussian_nll_one(X.row(i).transpose(), mu, Sigma);
+    }
+    start += size;
+  }
+  return total / static_cast<double>(n);
+}
+
 std::vector<EstimatorResult> recommend_with_projector(const Eigen::MatrixXd& X,
                                                       const ProjectFn& project) {
   const auto grid = candidate_grid(static_cast<int>(X.cols()),
@@ -269,6 +377,52 @@ double loo_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
         "loo_nll: sym.p must equal number of genes (cols)");
   }
   return loo_with_projector(X, symmetry_projector(sym), spec);
+}
+
+int effective_df(const EstimatorSpec& spec, const PairSymmetry& sym,
+                 const Eigen::MatrixXd& Sigma, double tol, int* n_edges) {
+  if (sym.p != static_cast<int>(Sigma.rows())) {
+    throw std::invalid_argument(
+        "effective_df: sym.p must equal the covariance dimension");
+  }
+  return model_dim(spec, sym, Sigma, tol, n_edges);
+}
+
+double ebic_score(const Eigen::MatrixXd& X, const std::vector<int>& labels,
+                  const EstimatorSpec& spec, double gamma) {
+  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
+    throw std::invalid_argument(
+        "ebic_score: labels length must equal number of genes (cols)");
+  }
+  const PairSymmetry sym = pair_symmetry_from_labels(labels);
+  return ebic_with_projector(X, block_projector(labels), sym, spec, gamma);
+}
+
+double ebic_score(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+                  const EstimatorSpec& spec, double gamma) {
+  if (sym.p != static_cast<int>(X.cols())) {
+    throw std::invalid_argument(
+        "ebic_score: sym.p must equal number of genes (cols)");
+  }
+  return ebic_with_projector(X, symmetry_projector(sym), sym, spec, gamma);
+}
+
+double kfold_nll(const Eigen::MatrixXd& X, const std::vector<int>& labels,
+                 const EstimatorSpec& spec, int k) {
+  if (static_cast<Eigen::Index>(labels.size()) != X.cols()) {
+    throw std::invalid_argument(
+        "kfold_nll: labels length must equal number of genes (cols)");
+  }
+  return kfold_with_projector(X, block_projector(labels), spec, k);
+}
+
+double kfold_nll(const Eigen::MatrixXd& X, const PairSymmetry& sym,
+                 const EstimatorSpec& spec, int k) {
+  if (sym.p != static_cast<int>(X.cols())) {
+    throw std::invalid_argument(
+        "kfold_nll: sym.p must equal number of genes (cols)");
+  }
+  return kfold_with_projector(X, symmetry_projector(sym), spec, k);
 }
 
 std::vector<EstimatorSpec> candidate_grid(int /*p*/, int /*n*/) {
