@@ -94,6 +94,17 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Make browsers revalidate the SPA assets on every load (they still get a
+    # fast 304 when unchanged). Without this, a browser can serve a stale app.js
+    # against fresh index.html after a deploy and render a broken/blank page.
+    @app.middleware("http")
+    async def _revalidate_static(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith((".html", ".js", ".css")):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
     def get_store(request: Request) -> JobStore:
         return request.app.state.store
 

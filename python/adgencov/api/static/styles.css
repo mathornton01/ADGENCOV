@@ -107,14 +107,19 @@ td.num { font-variant-numeric: tabular-nums; text-align: right; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .blocks .genes { color: var(--muted); font-size: 12px; word-break: break-word; }
 
-canvas { display: block; width: 100%; max-width: 440px; margin: 0 auto; background: #0d1420; border-radius: 8px; }
+/* Heatmap lives in a zoom/pan viewport; the wrapper clips, the canvas scales. */
+#heatmap-wrap {
+  max-width: 440px; margin: 0 auto; overflow: hidden; border-radius: 8px;
+  background: #0d1420; touch-action: none; cursor: crosshair;
+}
+#heatmap { display: block; width: 100%; background: #0d1420; will-change: transform; }
 svg#network { display: block; width: 100%; max-width: 640px; margin: 0 auto; background: #0d1420; border-radius: 8px; }
 
 /* 3D network view (WebGL canvas injected by 3d-force-graph) */
 #network-3d {
   display: block; width: 100%; max-width: 640px; height: 480px; margin: 0 auto;
   background: #0b0f18; border-radius: 8px; overflow: hidden; position: relative;
-  cursor: grab;
+  cursor: grab; touch-action: none;   /* let touch orbit/zoom the graph, not scroll the page */
 }
 #network-3d:active { cursor: grabbing; }
 #network-3d canvas { display: block; border-radius: 8px; }
@@ -227,7 +232,6 @@ svg#network text.node-label {
   fill: var(--ink); font-size: 9px; font-weight: 600; pointer-events: none;
   paint-order: stroke; stroke: #0d1420; stroke-width: 2.4px; stroke-linejoin: round;
 }
-canvas#heatmap { cursor: crosshair; }
 
 /* click-to-inspect detail panels (edge + heatmap cell) */
 .detail {

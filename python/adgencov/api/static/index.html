@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ADGENCOV — Genetic Covariance Explorer</title>
   <meta name="description" content="Algebraic-Diversity Genetic Covariance estimation for transcriptomics: upload a matrix or point at a GEO accession and explore the recommended covariance structure." />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=3d1" />
 </head>
 <body>
   <header class="topbar">
@@ -155,10 +155,10 @@
 
         <div class="panel">
           <h2>Covariance heatmap <span class="hint">ordered by block</span></h2>
-          <canvas id="heatmap" width="440" height="440"></canvas>
+          <div id="heatmap-wrap"><canvas id="heatmap" width="440" height="440"></canvas></div>
           <div class="legend" id="heatmap-legend"></div>
           <p class="hint" id="heatmap-note"></p>
-          <p class="hint">Click a cell to see the two genes it connects, then search their interactions.</p>
+          <p class="hint">Scroll or pinch to zoom &middot; drag to pan &middot; double-click to reset. Click a cell to see the two genes it connects, then search their interactions.</p>
           <div class="detail hidden" id="cell-detail"></div>
         </div>
 
@@ -180,8 +180,8 @@
             <button type="button" class="mini" id="net-reset" title="Recentre and fit the graph to the view">Reset view</button>
             <span class="hint" id="symbol-status" role="status" aria-live="polite"></span>
           </div>
-          <svg id="network" class="hidden" viewBox="0 0 640 480" role="img" aria-label="Gene covariance network"></svg>
-          <div id="network-3d" aria-label="3D gene covariance network"></div>
+          <svg id="network" viewBox="0 0 640 480" role="img" aria-label="Gene covariance network"></svg>
+          <div id="network-3d" class="hidden" aria-label="3D gene covariance network"></div>
           <p class="hint" id="net-3d-note"></p>
           <div class="tooltip hidden" id="net-tooltip"></div>
           <div class="net-legend" id="net-legend"></div>
@@ -199,7 +199,7 @@
     <span id="version"></span>
   </footer>
 
-  <script src="/vendor/3d-force-graph.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/vendor/3d-force-graph.min.js?v=1"></script>
+  <script src="/app.js?v=3d2"></script>
 </body>
 </html>

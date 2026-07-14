@@ -412,6 +412,7 @@
     var canvas = $("heatmap");
     var ctx = canvas.getContext("2d");
     var note = $("heatmap-note");
+    resetHeatmapZoom();                 // each new analysis starts unzoomed
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     var cov = result.covariance;
@@ -931,7 +932,11 @@
     });
 
     if (!GRAPH3D) {
+      try {
       GRAPH3D = window.ForceGraph3D()(host)
+        // Orbit controls behave far better under touch (iPad) than the default
+        // trackball: one finger rotates, two fingers pinch-zoom and pan.
+        .controlType("orbit")
         .backgroundColor("#0b0f18")
         .showNavInfo(false)
         .nodeRelSize(4)
@@ -956,6 +961,16 @@
         });
       sizeGraph3D();
       window.addEventListener("resize", sizeGraph3D);
+      } catch (err) {
+        // WebGL/3D failed to initialise (some tablets, blocked GPU): fall back
+        // to the 2D SVG so the network is never blank.
+        GRAPH3D = null;
+        setMode("2d");
+        hideEl(host); showEl($("network"));
+        setNet3dNote("3D view isn't available on this device — showing the 2D graph.");
+        renderNetwork(result, blockOrder(result.labels));
+        return;
+      }
     }
     NET_FROZEN = false;
     setFreezeLabel();
@@ -1155,14 +1170,96 @@
   // -- heatmap cell detail (click a cell) → STRING interactions ------------
   function onHeatmapClick(ev) {
     if (!HEATMAP || !LAST) { return; }
+    if (HM.moved) { HM.moved = false; return; }     // was a pan, not a cell click
     var canvas = $("heatmap");
-    var rect = canvas.getBoundingClientRect();
+    var rect = canvas.getBoundingClientRect();       // includes the zoom transform
     if (!rect.width) { return; }
     var scale = canvas.width / rect.width;          // CSS px → canvas px
     var col = Math.floor((ev.clientX - rect.left) * scale / HEATMAP.cell);
     var row = Math.floor((ev.clientY - rect.top) * scale / HEATMAP.cell);
     if (row < 0 || col < 0 || row >= HEATMAP.p || col >= HEATMAP.p) { return; }
     showCellDetail(HEATMAP.perm[row], HEATMAP.perm[col]);
+  }
+
+  // -- heatmap zoom / pan (wheel, pinch, drag) -----------------------------
+  var HM = { s: 1, tx: 0, ty: 0, dragging: false, moved: false,
+             lastX: 0, lastY: 0, pinchDist: 0, pinchCx: 0, pinchCy: 0 };
+  function applyHeatmapTransform() {
+    var c = $("heatmap");
+    if (!c) { return; }
+    c.style.transformOrigin = "0 0";
+    c.style.transform = "translate(" + HM.tx.toFixed(1) + "px," + HM.ty.toFixed(1) +
+      "px) scale(" + HM.s.toFixed(3) + ")";
+  }
+  function resetHeatmapZoom() { HM.s = 1; HM.tx = 0; HM.ty = 0; applyHeatmapTransform(); }
+  // Keep the scaled canvas covering the wrapper (no empty gutters).
+  function clampHeatmap() {
+    var wrap = $("heatmap-wrap");
+    if (!wrap) { return; }
+    if (HM.s <= 1) { HM.tx = 0; HM.ty = 0; return; }
+    var minTx = wrap.clientWidth * (1 - HM.s), minTy = wrap.clientHeight * (1 - HM.s);
+    if (HM.tx > 0) { HM.tx = 0; } if (HM.tx < minTx) { HM.tx = minTx; }
+    if (HM.ty > 0) { HM.ty = 0; } if (HM.ty < minTy) { HM.ty = minTy; }
+  }
+  // Zoom by *factor* keeping the point (cx, cy) (wrapper-relative px) fixed.
+  function zoomHeatmapAt(cx, cy, factor) {
+    var ns = Math.max(1, Math.min(10, HM.s * factor));
+    var k = ns / HM.s;
+    HM.tx = cx - k * (cx - HM.tx);
+    HM.ty = cy - k * (cy - HM.ty);
+    HM.s = ns;
+    clampHeatmap();
+    applyHeatmapTransform();
+  }
+  function initHeatmapZoom() {
+    var wrap = $("heatmap-wrap");
+    if (!wrap) { return; }
+    wrap.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var r = wrap.getBoundingClientRect();
+      zoomHeatmapAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    }, { passive: false });
+    wrap.addEventListener("dblclick", function () { resetHeatmapZoom(); });
+    // Mouse/trackpad drag to pan (only when zoomed in).
+    wrap.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "touch") { return; }
+      HM.dragging = true; HM.moved = false; HM.lastX = e.clientX; HM.lastY = e.clientY;
+    });
+    wrap.addEventListener("pointermove", function (e) {
+      if (!HM.dragging) { return; }
+      var dx = e.clientX - HM.lastX, dy = e.clientY - HM.lastY;
+      if (Math.abs(dx) + Math.abs(dy) > 2) { HM.moved = true; }
+      if (HM.s > 1) { HM.tx += dx; HM.ty += dy; clampHeatmap(); applyHeatmapTransform(); }
+      HM.lastX = e.clientX; HM.lastY = e.clientY;
+    });
+    window.addEventListener("pointerup", function () { HM.dragging = false; });
+    // Touch: one finger pans (when zoomed), two fingers pinch-zoom.
+    wrap.addEventListener("touchstart", function (e) {
+      if (e.touches.length === 2) {
+        var a = e.touches[0], b = e.touches[1], r = wrap.getBoundingClientRect();
+        HM.pinchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        HM.pinchCx = (a.clientX + b.clientX) / 2 - r.left;
+        HM.pinchCy = (a.clientY + b.clientY) / 2 - r.top;
+      } else if (e.touches.length === 1) {
+        HM.lastX = e.touches[0].clientX; HM.lastY = e.touches[0].clientY; HM.moved = false;
+      }
+    }, { passive: false });
+    wrap.addEventListener("touchmove", function (e) {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        var a = e.touches[0], b = e.touches[1];
+        var d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (HM.pinchDist > 0) { zoomHeatmapAt(HM.pinchCx, HM.pinchCy, d / HM.pinchDist); }
+        HM.pinchDist = d;
+      } else if (e.touches.length === 1 && HM.s > 1) {
+        e.preventDefault();
+        var t = e.touches[0];
+        HM.tx += t.clientX - HM.lastX; HM.ty += t.clientY - HM.lastY; HM.moved = true;
+        HM.lastX = t.clientX; HM.lastY = t.clientY;
+        clampHeatmap(); applyHeatmapTransform();
+      }
+    }, { passive: false });
+    wrap.addEventListener("touchend", function (e) { if (e.touches.length === 0) { HM.pinchDist = 0; } });
   }
 
   function showCellDetail(gi, gj) {
@@ -1288,8 +1385,11 @@
     $("net-reset").addEventListener("click", function () {
       if (NET_MODE === "3d" && GRAPH3D) { GRAPH3D.zoomToFit(600, 24); }
     });
-    // Default to 3D when the browser supports it, else fall back to 2D.
-    setMode(canRender3D() ? "3d" : "2d");
+    // Default to 3D on WebGL desktops; default to the reliable 2D view on
+    // touch-primary devices (iPad/phone), where the 3D toggle is still offered.
+    var coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    setMode((canRender3D() && !coarsePointer) ? "3d" : "2d");
+    initHeatmapZoom();
     // Reveal the EBIC penalty field only when the EBIC criterion is selected.
     function syncCriterion() {
       $("ebic-gamma-field").classList.toggle("hidden", $("criterion").value !== "ebic");
