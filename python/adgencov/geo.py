@@ -499,6 +499,7 @@ def fetch_series(
     os.makedirs(cdir, exist_ok=True)
     dest = os.path.join(cdir, f"{acc}_series_matrix.txt.gz")
 
+    download_err = None
     if force or not os.path.exists(dest) or os.path.getsize(dest) == 0:
         url = series_matrix_url(acc)
         tmp = dest + ".part"
@@ -512,29 +513,44 @@ def fetch_series(
                     os.remove(tmp)
                 except OSError:
                     pass
-            raise GeoError(f"failed to download {acc} from {url}: {exc}") from exc
+            download_err = exc
+
+    # Two ways the primary series matrix can be unusable, both of which should
+    # fall back to the supplementary counts/FPKM/TPM matrix (allow_supplementary):
+    #   1. it downloaded but carries no ``!series_matrix_table`` block (typical
+    #      RNA-seq), or
+    #   2. the single-file matrix does not exist at all (404) — common for
+    #      multi-platform series (per-GPL ``GSE..-GPLnnn_series_matrix`` files)
+    #      and RNA-seq series that ship only supplementary counts, e.g. GSE147507.
+    meta = None
+    if download_err is None:
+        try:
+            return read_series_matrix(dest, accession=acc)
+        except GeoError as exc:
+            if not allow_supplementary:
+                raise
+            meta = _series_metadata_only(dest)
+            primary_err = exc
+    else:
+        if not allow_supplementary:
+            raise GeoError(
+                f"failed to download {acc} from {series_matrix_url(acc)}: {download_err}"
+            ) from download_err
+        primary_err = download_err
 
     try:
-        return read_series_matrix(dest, accession=acc)
-    except GeoError as exc:
-        if not allow_supplementary:
-            raise
-        # Empty in-matrix table (typical for RNA-seq): fall back to the
-        # supplementary FPKM/TPM/counts matrix, carrying series metadata over.
-        try:
-            meta = _series_metadata_only(dest)
-            return fetch_supplementary_series(
-                acc,
-                cache_dir=cdir,
-                force=force,
-                timeout=timeout,
-                series_metadata=meta,
-            )
-        except GeoError as exc2:
-            raise GeoError(
-                f"{acc}: series matrix carries no expression table and no usable "
-                f"supplementary matrix was found ({exc2})"
-            ) from exc
+        return fetch_supplementary_series(
+            acc,
+            cache_dir=cdir,
+            force=force,
+            timeout=timeout,
+            series_metadata=meta,
+        )
+    except GeoError as exc2:
+        raise GeoError(
+            f"{acc}: no usable series-matrix table (tried {series_matrix_url(acc)}) "
+            f"and no usable supplementary matrix was found ({exc2})"
+        ) from primary_err
 
 
 # ---------------------------------------------------------------------------
