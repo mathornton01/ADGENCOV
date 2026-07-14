@@ -934,9 +934,6 @@
     if (!GRAPH3D) {
       try {
       GRAPH3D = window.ForceGraph3D()(host)
-        // Orbit controls behave far better under touch (iPad) than the default
-        // trackball: one finger rotates, two fingers pinch-zoom and pan.
-        .controlType("orbit")
         .backgroundColor("#0b0f18")
         .showNavInfo(false)
         .nodeRelSize(4)
