@@ -40,4 +40,4 @@ packages = ["adgencov", "adgencov.api"]
 [tool.setuptools.package-data]
 adgencov = ["*.so", "*.pyd", "*.dylib"]
 # The Phase D dashboard SPA is served by the FastAPI app from this dir.
-"adgencov.api" = ["static/*.html", "static/*.js", "static/*.css"]
+"adgencov.api" = ["static/*.html", "static/*.js", "static/*.css", "static/vendor/*.js"]

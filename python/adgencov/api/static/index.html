@@ -172,9 +172,17 @@
                 <option value="rat">rat</option>
               </select>
             </label>
+            <span class="net-mode" role="group" aria-label="Network view mode">
+              <button type="button" class="mini nmode active" id="nmode-3d" data-mode="3d" aria-pressed="true">3D</button>
+              <button type="button" class="mini nmode" id="nmode-2d" data-mode="2d" aria-pressed="false">2D</button>
+            </span>
+            <button type="button" class="mini" id="net-freeze" title="Pin every node where it is so you can orbit a fixed structure">Freeze</button>
+            <button type="button" class="mini" id="net-reset" title="Recentre and fit the graph to the view">Reset view</button>
             <span class="hint" id="symbol-status" role="status" aria-live="polite"></span>
           </div>
-          <svg id="network" viewBox="0 0 640 480" role="img" aria-label="Gene covariance network"></svg>
+          <svg id="network" class="hidden" viewBox="0 0 640 480" role="img" aria-label="Gene covariance network"></svg>
+          <div id="network-3d" aria-label="3D gene covariance network"></div>
+          <p class="hint" id="net-3d-note"></p>
           <div class="tooltip hidden" id="net-tooltip"></div>
           <div class="net-legend" id="net-legend"></div>
           <div class="hub-panel hidden" id="hub-panel"></div>
@@ -191,6 +199,7 @@
     <span id="version"></span>
   </footer>
 
+  <script src="/vendor/3d-force-graph.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

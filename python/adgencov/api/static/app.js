@@ -30,6 +30,13 @@
   var HEATMAP = null;         // { perm, p, cell } — pixel→cell mapping for clicks
   var SYMBOLS = {};           // original gene id -> {symbol, name, rna_type, ...}
 
+  // -- network view mode ---------------------------------------------------
+  // The covariance network renders either as the 2D SVG (renderNetwork) or a
+  // WebGL 3D force graph (renderNetwork3D, via the vendored 3d-force-graph).
+  var NET_MODE = "3d";        // "3d" | "2d" (falls back to 2d without WebGL)
+  var GRAPH3D = null;         // the lazily-created ForceGraph3D instance
+  var NET_FROZEN = false;     // whether 3D node positions are pinned
+
   // Display symbol for a gene id (falls back to the raw id until resolved).
   function displayName(gene) {
     var s = SYMBOLS[gene];
@@ -315,7 +322,7 @@
     renderRanking(result.ranking);
     renderBlocks(result, LAST.bo);
     renderHeatmap(result, LAST.bo);
-    renderNetwork(result, LAST.bo);
+    renderNetworkActive(result, LAST.bo);
     // Clear any stale click-detail panels from a previous analysis.
     hide($("edge-detail")); hide($("cell-detail"));
     $("results").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -346,7 +353,7 @@
         // the canvas/svg geometry is unchanged so we only refresh labels.
         if (LAST) {
           renderBlocks(LAST.result, LAST.bo);
-          renderNetwork(LAST.result, LAST.bo);
+          refreshNetworkLabels(LAST.result, LAST.bo);
         }
       })
       .catch(function (e) { status.textContent = "symbol lookup failed: " + (e.message || e); });
@@ -820,16 +827,199 @@
     renderPairsPanel(net, result);
   }
 
+  // -- network mode dispatch -----------------------------------------------
+  // True when the browser can create a WebGL context (else 3D is unavailable).
+  function webglSupported() {
+    try {
+      var c = document.createElement("canvas");
+      return !!(window.WebGLRenderingContext &&
+        (c.getContext("webgl") || c.getContext("experimental-webgl")));
+    } catch (e) { return false; }
+  }
+  // 3D is only possible when both the vendored library loaded and WebGL exists.
+  function canRender3D() { return !!window.ForceGraph3D && webglSupported(); }
+
+  // Render the covariance network in whichever mode is active, toggling the
+  // 2D SVG and the 3D canvas containers. Falls back to 2D when 3D is not
+  // available (missing WebGL or the vendored bundle failed to load).
+  function renderNetworkActive(result, bo) {
+    var svg = $("network"), host3d = $("network-3d");
+    var use3d = NET_MODE === "3d" && canRender3D();
+    if (use3d) {
+      hideEl(svg); showEl(host3d);
+      renderNetwork3D(result);
+    } else {
+      hideEl(host3d); showEl(svg);
+      if (NET_MODE === "3d") {
+        setMode("2d");            // reflect the fallback in the toggle UI
+        setNet3dNote("3D needs WebGL, which this browser/GPU didn't provide — showing the 2D view.");
+      }
+      renderNetwork(result, bo);
+    }
+  }
+
+  // Refresh only the text surfaces (labels, legend, hub/pairs panels) after an
+  // async symbol relabel, without disturbing the settled 3D layout.
+  function refreshNetworkLabels(result, bo) {
+    if (NET_MODE === "2d" || !canRender3D()) { renderNetwork(result, bo); return; }
+    // 3D: node tooltips read displayName() live, so only the HTML panels + the
+    // pinned camera-independent legend need refreshing here.
+    var net = result.__net ? computeNetwork(result) : null;
+    renderNetLegend(net); renderHubTable(net, result); renderPairsPanel(net, result);
+  }
+
+  function hideEl(el) { if (el) { el.classList.add("hidden"); } }
+  function showEl(el) { if (el) { el.classList.remove("hidden"); } }
+  function setNet3dNote(msg) { var n = $("net-3d-note"); if (n) { n.textContent = msg || ""; } }
+
+  // Reflect the active mode in the toggle buttons.
+  function setMode(mode) {
+    NET_MODE = mode;
+    var btns = document.querySelectorAll(".nmode");
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].getAttribute("data-mode") === mode;
+      btns[i].classList.toggle("active", on);
+      btns[i].setAttribute("aria-pressed", on ? "true" : "false");
+    }
+  }
+
+  // -- 3D covariance network (vendored 3d-force-graph / three.js) ----------
+  // Nodes coloured by Louvain community, sized by degree; edges coloured by the
+  // sign of the covariance (purple positive / blue negative) and widened by its
+  // strength, with animated particles flowing along the strongest edges. Orbit
+  // with drag, zoom with the wheel, drag a node to reposition (and pin) it.
+  function sizeGraph3D() {
+    if (!GRAPH3D) { return; }
+    var host = $("network-3d");
+    var w = host.clientWidth || 640;
+    GRAPH3D.width(w).height(480);
+  }
+
+  function renderNetwork3D(result) {
+    var host = $("network-3d");
+    var edges = result.edges || [];
+    $("edge-count").textContent = "(" + edges.length + " edges)";
+    setNet3dNote("Drag to orbit · scroll to zoom · drag a node to move it · Freeze to pin the layout.");
+    if (!edges.length) {
+      if (GRAPH3D) { GRAPH3D.graphData({ nodes: [], links: [] }); }
+      renderNetLegend(null); renderHubTable(null, result); renderPairsPanel(null, result);
+      return;
+    }
+
+    var net = computeNetwork(result);
+    var comm = net.comm, degree = net.degree, maxAbs = net.maxAbs;
+    var maxDeg = 1;
+    for (var g in degree) { if (degree[g] > maxDeg) { maxDeg = degree[g]; } }
+
+    var nodes = net.nodeIds.map(function (id) {
+      var deg = degree[id] || 0;
+      return {
+        id: id, comm: comm[id], deg: deg, rtype: rnaType(id),
+        color: communityColor(comm[id]),
+        val: 0.6 + 5.0 * Math.sqrt(deg / maxDeg)   // marker volume ~ degree
+      };
+    });
+    var links = edges.map(function (ed) {
+      var w = ed.abs_covariance / maxAbs;
+      var bkt = strengthBucket(w);
+      var ramp = ed.covariance >= 0 ? EDGE_RAMP_POS : EDGE_RAMP_NEG;
+      return {
+        source: ed.gene_a, target: ed.gene_b, ga: ed.gene_a, gb: ed.gene_b,
+        covariance: ed.covariance, bkt: bkt,
+        color: ramp[bkt], width: EDGE_WIDTH[bkt], particles: bkt >= 2 ? 2 : 0
+      };
+    });
+
+    if (!GRAPH3D) {
+      GRAPH3D = window.ForceGraph3D()(host)
+        .backgroundColor("#0b0f18")
+        .showNavInfo(false)
+        .nodeRelSize(4)
+        .nodeVal(function (n) { return n.val; })
+        .nodeColor(function (n) { return n.color; })
+        .nodeOpacity(0.95)
+        .nodeResolution(12)
+        .nodeLabel(function (n) {
+          return displayName(n.id) + "  ·  " + rnaType(n.id) +
+            "  ·  degree " + n.deg + "  ·  community " + (n.comm + 1);
+        })
+        .linkColor(function (l) { return l.color; })
+        .linkWidth(function (l) { return l.width * 0.4; })
+        .linkOpacity(0.55)
+        .linkDirectionalParticles(function (l) { return l.particles; })
+        .linkDirectionalParticleWidth(1.1)
+        .linkDirectionalParticleSpeed(0.006)
+        .onNodeClick(focusNode3D)
+        .onNodeDragEnd(function (n) { n.fx = n.x; n.fy = n.y; n.fz = n.z; })
+        .onLinkClick(function (l) {
+          showEdgeDetail({ gene_a: l.ga, gene_b: l.gb, covariance: l.covariance });
+        });
+      sizeGraph3D();
+      window.addEventListener("resize", sizeGraph3D);
+    }
+    NET_FROZEN = false;
+    setFreezeLabel();
+    GRAPH3D.graphData({ nodes: nodes, links: links });
+    // Fit the fresh layout into view once it has had a moment to expand.
+    GRAPH3D.onEngineStop(function () {
+      GRAPH3D.zoomToFit(600, 24);
+      GRAPH3D.onEngineStop(function () {});   // fit only once per analysis
+    });
+
+    renderNetLegend(net);
+    renderHubTable(net, result);
+    renderPairsPanel(net, result);
+  }
+
+  // Fly the camera to look at a clicked node from a short distance.
+  function focusNode3D(node) {
+    if (!GRAPH3D) { return; }
+    var d = 120;
+    var r = Math.hypot(node.x, node.y, node.z) || 1;
+    var k = 1 + d / r;
+    GRAPH3D.cameraPosition(
+      { x: node.x * k, y: node.y * k, z: node.z * k }, node, 1200);
+  }
+
+  // Pin (or release) every node so the structure can be orbited as a fixed
+  // object ("fix it in place and zoom around on it").
+  function toggleFreeze() {
+    if (!GRAPH3D) { return; }
+    NET_FROZEN = !NET_FROZEN;
+    var data = GRAPH3D.graphData();
+    for (var i = 0; i < data.nodes.length; i++) {
+      var n = data.nodes[i];
+      if (NET_FROZEN) { n.fx = n.x; n.fy = n.y; n.fz = n.z; }
+      else { n.fx = null; n.fy = null; n.fz = null; }
+    }
+    if (!NET_FROZEN && GRAPH3D.d3ReheatSimulation) { GRAPH3D.d3ReheatSimulation(); }
+    setFreezeLabel();
+  }
+  function setFreezeLabel() {
+    var b = $("net-freeze");
+    if (b) { b.textContent = NET_FROZEN ? "Unfreeze" : "Freeze"; b.classList.toggle("active", NET_FROZEN); }
+  }
+
   // Legend: node shapes, edge-strength ramp, and Louvain communities + sizes.
   function renderNetLegend(net) {
     var host = $("net-legend");
     if (!host) { return; }
     if (!net) { host.innerHTML = ""; return; }
     var html = "";
-    html += '<div class="lg-group"><div class="lg-title">Node type</div>' +
-      '<div class="lg-row"><span class="lg-shape circle"></span>Protein-coding gene</div>' +
-      '<div class="lg-row"><span class="lg-shape square"></span>miRNA</div>' +
-      '<div class="lg-row"><span class="lg-shape diamond"></span>snoRNA</div></div>';
+    if (NET_MODE === "3d" && canRender3D()) {
+      // In 3D every node is a sphere; RNA class shows on hover, so the legend
+      // describes the colour/size encoding instead of the 2D marker shapes.
+      html += '<div class="lg-group"><div class="lg-title">Nodes</div>' +
+        '<div class="lg-row"><span class="lg-dot" style="background:var(--muted)"></span>Sphere per gene</div>' +
+        '<div class="lg-row">Colour = community</div>' +
+        '<div class="lg-row">Size = degree</div>' +
+        '<div class="lg-row"><span class="hint">RNA type on hover</span></div></div>';
+    } else {
+      html += '<div class="lg-group"><div class="lg-title">Node type</div>' +
+        '<div class="lg-row"><span class="lg-shape circle"></span>Protein-coding gene</div>' +
+        '<div class="lg-row"><span class="lg-shape square"></span>miRNA</div>' +
+        '<div class="lg-row"><span class="lg-shape diamond"></span>snoRNA</div></div>';
+    }
     html += '<div class="lg-group"><div class="lg-title">Edge strength</div>';
     for (var s = 0; s < 4; s++) {
       html += '<div class="lg-row"><span class="lg-line" style="background:' + EDGE_RAMP_POS[s] +
@@ -1084,6 +1274,22 @@
       hide($("edge-detail")); hide($("cell-detail"));
       if (LAST) { resolveSymbols(LAST.result.genes); }
     });
+    // Network 2D/3D toggle + 3D camera controls.
+    var nmodeBtns = document.querySelectorAll(".nmode");
+    for (var m = 0; m < nmodeBtns.length; m++) {
+      nmodeBtns[m].addEventListener("click", function (ev) {
+        var mode = ev.currentTarget.getAttribute("data-mode");
+        if (mode === NET_MODE) { return; }
+        setMode(mode);
+        if (LAST) { renderNetworkActive(LAST.result, LAST.bo); }
+      });
+    }
+    $("net-freeze").addEventListener("click", toggleFreeze);
+    $("net-reset").addEventListener("click", function () {
+      if (NET_MODE === "3d" && GRAPH3D) { GRAPH3D.zoomToFit(600, 24); }
+    });
+    // Default to 3D when the browser supports it, else fall back to 2D.
+    setMode(canRender3D() ? "3d" : "2d");
     // Reveal the EBIC penalty field only when the EBIC criterion is selected.
     function syncCriterion() {
       $("ebic-gamma-field").classList.toggle("hidden", $("criterion").value !== "ebic");
