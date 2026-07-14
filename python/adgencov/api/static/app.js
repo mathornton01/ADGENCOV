@@ -431,7 +431,12 @@
         if (v > maxAbs) { maxAbs = v; }
       }
     }
-    var cell = Math.max(1, Math.floor(canvas.width / p));
+    // Size cells from a fixed base, not canvas.width — the previous render
+    // overwrote canvas.width with its (smaller) dim, so reading it back here
+    // shrank the bitmap a little more on every run. CSS pins the display size
+    // (max-width: 440px) regardless, so a larger base just buys sharper cells.
+    var BASE = 880;
+    var cell = Math.max(1, Math.floor(BASE / p));
     var dim = cell * p;
     // Keep the canvas crisp at the drawn size.
     canvas.width = dim; canvas.height = dim;
@@ -920,7 +925,9 @@
       el.setAttribute("rx", "0.8");
     } else if (type === "snoRNA") {
       el = document.createElementNS(NS, "polygon");
-      var q = (r * DIAMOND_SCALE).toFixed(1);
+      // Keep q numeric: toFixed() returns a string, and the right vertex uses
+      // (x + q), which would string-concatenate rather than add.
+      var q = r * DIAMOND_SCALE;
       el.setAttribute("points",
         x + "," + (y - q) + " " + (x + q) + "," + y + " " + x + "," + (+y + +q) + " " + (x - q) + "," + y);
     } else {
