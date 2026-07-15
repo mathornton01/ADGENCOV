@@ -41,6 +41,8 @@ _SPECIES_TAXID = {
     "human": 9606, "homo sapiens": 9606, "9606": 9606,
     "mouse": 10090, "mus musculus": 10090, "10090": 10090,
     "rat": 10116, "rattus norvegicus": 10116, "10116": 10116,
+    "worm": 6239, "celegans": 6239, "c. elegans": 6239, "c elegans": 6239,
+    "caenorhabditis elegans": 6239, "nematode": 6239, "6239": 6239,
 }
 
 

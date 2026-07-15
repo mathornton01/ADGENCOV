@@ -199,7 +199,7 @@ class SymbolTranslateRequest(BaseModel):
     )
     species: str = Field(
         "human",
-        description="Organism for the lookup: human (default), mouse, rat, or an NCBI taxid.",
+        description="Organism for the lookup: human (default), mouse, rat, worm (C. elegans), or an NCBI taxid.",
     )
 
 

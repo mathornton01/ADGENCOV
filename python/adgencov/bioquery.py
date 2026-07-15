@@ -478,7 +478,9 @@ _MYGENE_FIELDS = "symbol,name,taxid,type_of_gene,entrezgene,ensembl.gene"
 # Entrez hit, so we bucket ids and pin each bucket to the right id space.
 _SCOPE_ENTREZ = "entrezgene,retired"
 _SCOPE_ENSEMBL = "ensembl.gene,ensembl.transcript,ensembl.protein"
-_SCOPE_SYMBOL = "symbol,alias,uniprot,accession,refseq,name,other_names,retired"
+# ``wormbase`` lets C. elegans WormBase ids (WBGene…) and systematic sequence
+# names (e.g. F35G12.3) resolve; it is inert for other species' ids.
+_SCOPE_SYMBOL = "symbol,alias,uniprot,accession,refseq,name,other_names,wormbase,retired"
 _ENSEMBL_RE = re.compile(r"^ENS[A-Z]*[GTP]\d{6,}", re.IGNORECASE)
 
 
@@ -490,11 +492,16 @@ def _mygene_scope_for(token: str) -> str:
     if _ENSEMBL_RE.match(t):
         return _SCOPE_ENSEMBL
     return _SCOPE_SYMBOL
-# NCBI/Ensembl species tokens accepted by mygene's ``species`` param.
+# NCBI/Ensembl species tokens accepted by mygene's ``species`` param.  C.
+# elegans is passed as its taxid (6239) so mygene disambiguates worm genes;
+# combined with the ``wormbase`` scope below this resolves WormBase ids
+# (WBGene…), systematic sequence names (F35G12.3), and CGC symbols (daf-16).
 _SPECIES_ALIASES = {
     "9606": "human", "human": "human", "homo sapiens": "human",
     "10090": "mouse", "mouse": "mouse", "mus musculus": "mouse",
     "10116": "rat", "rat": "rat", "rattus norvegicus": "rat",
+    "6239": "6239", "worm": "6239", "celegans": "6239", "c. elegans": "6239",
+    "c elegans": "6239", "caenorhabditis elegans": "6239", "nematode": "6239",
 }
 
 
