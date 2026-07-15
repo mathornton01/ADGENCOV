@@ -479,8 +479,11 @@ _MYGENE_FIELDS = "symbol,name,taxid,type_of_gene,entrezgene,ensembl.gene"
 _SCOPE_ENTREZ = "entrezgene,retired"
 _SCOPE_ENSEMBL = "ensembl.gene,ensembl.transcript,ensembl.protein"
 # ``wormbase`` lets C. elegans WormBase ids (WBGene…) and systematic sequence
-# names (e.g. F35G12.3) resolve; it is inert for other species' ids.
-_SCOPE_SYMBOL = "symbol,alias,uniprot,accession,refseq,name,other_names,wormbase,retired"
+# names (e.g. F35G12.3) resolve; it is inert for other species' ids.  The
+# free-text ``name``/``other_names`` scopes are deliberately excluded: a query
+# like "daf-16" would otherwise match a *different* gene whose description
+# merely contains "DAF-16" (e.g. dod-3, "Downstream Of DAF-16").
+_SCOPE_SYMBOL = "symbol,alias,uniprot,accession,refseq,wormbase,retired"
 _ENSEMBL_RE = re.compile(r"^ENS[A-Z]*[GTP]\d{6,}", re.IGNORECASE)
 
 
@@ -679,11 +682,17 @@ def _parse_mygene_records(
         q = str(rec.get("query", "")).strip()
         if not q or rec.get("notfound"):
             continue
-        # mygene returns several hits per query ordered best-first; keep the
-        # first (highest _score) and ignore the rest.
-        if q in resolved:
-            continue
         sym = str(rec.get("symbol", "")).strip()
+        # mygene returns several hits per query ordered best-first. Keep the
+        # first (highest _score) hit, but let a later *exact* symbol match
+        # (symbol == the queried token) override an earlier fuzzy one, so e.g.
+        # querying "daf-16" resolves to daf-16 rather than a same-batch alias hit.
+        exact = bool(sym) and sym.lower() == q.lower()
+        existing = resolved.get(q)
+        if existing is not None:
+            existing_exact = bool(existing.symbol) and existing.symbol.lower() == q.lower()
+            if existing_exact or not exact:
+                continue
         tog = str(rec.get("type_of_gene", "")).strip()
         ens = rec.get("ensembl")
         ens_id = ""
