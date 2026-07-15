@@ -485,6 +485,9 @@ _SCOPE_ENSEMBL = "ensembl.gene,ensembl.transcript,ensembl.protein"
 # merely contains "DAF-16" (e.g. dod-3, "Downstream Of DAF-16").
 _SCOPE_SYMBOL = "symbol,alias,uniprot,accession,refseq,wormbase,retired"
 _ENSEMBL_RE = re.compile(r"^ENS[A-Z]*[GTP]\d{6,}", re.IGNORECASE)
+# C. elegans systematic sequence names, e.g. R13H8.1, Y55D5A.5, F56D2.6b — mygene
+# stores these as the Entrez locus_tag "CELE_<name>", not under symbol/alias.
+_WORM_SEQNAME_RE = re.compile(r"^[A-Z][A-Z0-9]{1,}\.\d+[a-z]?$", re.IGNORECASE)
 
 
 def _mygene_scope_for(token: str) -> str:
@@ -638,9 +641,17 @@ def translate_gene_symbols(
         # Bucket ids by scope so each id space is queried unambiguously.  An
         # explicit *scopes* override collapses everything into one bucket.
         buckets: Dict[str, List[str]] = {}
+        alias: Dict[str, str] = {}   # query term -> original token (worm seq names)
         for tok in to_query:
-            scope = scopes if scopes else _mygene_scope_for(tok)
-            buckets.setdefault(scope, []).append(tok)
+            if scopes:
+                scope, term = scopes, tok
+            elif sp == "6239" and _WORM_SEQNAME_RE.match(tok):
+                # C. elegans sequence name: query its Entrez locus_tag form.
+                scope, term = "locus_tag", "CELE_" + tok
+                alias[term] = tok
+            else:
+                scope, term = _mygene_scope_for(tok), tok
+            buckets.setdefault(scope, []).append(term)
 
         fresh: Dict[str, Dict[str, Any]] = {}
         for scope, group in buckets.items():
@@ -657,7 +668,7 @@ def translate_gene_symbols(
                 raise BioQueryError(f"invalid JSON from mygene: {exc}") from exc
             if not isinstance(records, list):
                 records = [records] if isinstance(records, dict) else []
-            _parse_mygene_records(records, sp, resolved, fresh)
+            _parse_mygene_records(records, sp, resolved, fresh, alias)
 
         if use_cache and fresh:
             biocache.set_many(ns, fresh)
@@ -674,12 +685,19 @@ def _parse_mygene_records(
     species: str,
     resolved: Dict[str, "GeneSymbol"],
     fresh: Dict[str, Dict[str, Any]],
+    alias: Optional[Dict[str, str]] = None,
 ) -> None:
-    """Fold a mygene response into *resolved* / *fresh* (first hit per query wins)."""
+    """Fold a mygene response into *resolved* / *fresh* (first hit per query wins).
+
+    *alias* maps a query term we actually sent back to the caller's original id
+    (used when a token is rewritten, e.g. a C. elegans sequence name queried as
+    its ``CELE_`` locus_tag), so results are keyed by the id the caller asked for.
+    """
+    alias = alias or {}
     for rec in records:
         if not isinstance(rec, dict):
             continue
-        q = str(rec.get("query", "")).strip()
+        q = alias.get(str(rec.get("query", "")).strip(), str(rec.get("query", "")).strip())
         if not q or rec.get("notfound"):
             continue
         sym = str(rec.get("symbol", "")).strip()
