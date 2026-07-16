@@ -40,7 +40,7 @@ GENE_COL = "gene_short_name"
 N_GENES = 64
 N_BLOCKS = 4
 MIN_MEAN = 0.1
-TOP_FRACTION = 0.01
+TOP_FRACTION = 0.01   # overridable via --top-fraction
 
 # Paper Table 1 -> code method names.  Equation (2) of the note defines the AD
 # family as the convex combination Sigma_AD = (1-lam) S + lam P_G(S) followed by
@@ -72,6 +72,8 @@ def fetch_matrix(cache_dir: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default="paper_out")
+    ap.add_argument("--top-fraction", type=float, default=TOP_FRACTION,
+                    help="Fraction of gene pairs kept as network edges.")
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -87,7 +89,7 @@ def main() -> None:
     print("correlation-derived block sizes:", sizes)
 
     res = adgencov.analyze(
-        X, codes, genes=list(ds.genes), top_fraction=TOP_FRACTION, criterion="loo"
+        X, codes, genes=list(ds.genes), top_fraction=args.top_fraction, criterion="loo"
     )
     d = res.to_dict()
 
