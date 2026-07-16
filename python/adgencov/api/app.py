@@ -69,6 +69,46 @@ DEFAULT_ALLOWED_ORIGINS = [
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
+def _figure_overrides(request) -> dict:
+    """Turn ?figsize=12,8&show_hubs=false&... into FigureConfig overrides.
+
+    Only fields FigureConfig actually declares are accepted, and each is coerced
+    to that field's type, so the URL cannot inject arbitrary state.
+    """
+    from dataclasses import fields as _fields
+
+    from ..figure import FigureConfig
+
+    spec = {f.name: f for f in _fields(FigureConfig)}
+    out: dict = {}
+    for key, raw in request.query_params.items():
+        f = spec.get(key)
+        if f is None:
+            continue
+        ann = str(f.type)
+        low = raw.strip().lower()
+        try:
+            if "bool" in ann:
+                out[key] = low in ("1", "true", "yes", "on")
+            elif key == "figsize":
+                a, b = raw.split(",")
+                out[key] = (float(a), float(b))
+            elif "Sequence[str]" in ann:
+                out[key] = [v.strip() for v in raw.split(",") if v.strip()]
+            elif "Sequence[float]" in ann:
+                out[key] = [float(v) for v in raw.split(",") if v.strip()]
+            elif "int" in ann:
+                out[key] = None if low in ("", "none") else int(raw)
+            elif "float" in ann:
+                out[key] = None if low in ("", "none") else float(raw)
+            else:
+                out[key] = raw
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422,
+                                detail=f"bad value for figure option {key!r}: {raw!r}")
+    return out
+
+
 def create_app(
     store: Optional[JobStore] = None,
     *,
@@ -348,12 +388,16 @@ def create_app(
     }
 
     @app.get("/jobs/{job_id}/export/{artifact}", tags=["jobs"])
-    def export_job(job_id: str, artifact: str, store: JobStore = Depends(get_store)):
+    def export_job(job_id: str, artifact: str, request: Request,
+                   store: JobStore = Depends(get_store)):
         """Download a finished analysis as LaTeX or CSV.
 
-        *artifact* is one of table.tex, table.csv, edges.csv, blocks.csv,
-        covariance.csv (single analyses) or compare.csv, compare.tex (a compare
-        run).
+        *artifact* is one of figure.pdf, figure.png, table.tex, table.csv,
+        edges.csv, blocks.csv, covariance.csv (single analyses) or compare.csv,
+        compare.tex (a compare run).
+
+        Figure exports accept any ``FigureConfig`` field as a query parameter,
+        e.g. ``figure.png?figsize=12,8&show_hubs=false&community_colors=#111,#666``.
         """
         from .. import export as exporters
 
@@ -384,7 +428,8 @@ def create_app(
                     detail="figure export applies to a single analysis, not a compare run",
                 )
             try:
-                body = render_network(payload, fmt=artifact.rsplit(".", 1)[1])
+                body = render_network(payload, fmt=artifact.rsplit(".", 1)[1],
+                                      **_figure_overrides(request))
             except FigureUnavailable as exc:
                 raise HTTPException(status_code=501, detail=str(exc))
             except ValueError as exc:
