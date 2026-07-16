@@ -204,6 +204,7 @@
     busy(true);
     showProgress(true);
     setStatus("Submitting…", null);
+    LAST_JOB_ID = null; hide($("export-panel"));
     window.ADGENCOV._lastSource = currentSource === "geo"
       ? ("GEO " + $("accession").value.trim())
       : currentSource === "multi"
@@ -218,11 +219,12 @@
         return body;
       });
     })
-    .then(function (summary) { setStatus("Queued job " + summary.id.slice(0, 8) + "…", null); return pollJob(summary.id); })
+    .then(function (summary) { LAST_JOB_ID = summary.id; setStatus("Queued job " + summary.id.slice(0, 8) + "…", null); return pollJob(summary.id); })
     .then(function (result) {
       setStatus("Done.", "ok"); setProgress(1, "Complete", "ok");
       // A compare run returns {datasets, comparison} rather than one analysis.
-      if (result && result.comparison) { renderCompare(result); } else { render(result); }
+      if (result && result.comparison) { renderCompare(result); renderExports(true); }
+      else { render(result); renderExports(false); }
     })
     .catch(function (e) { setStatus(e.message || String(e), "err"); setProgress(0, "Failed", "err"); })
     .then(function () { busy(false); setTimeout(function () { showProgress(false); }, 1200); });
@@ -347,6 +349,38 @@
   }
 
   // -- render dispatch -----------------------------------------------------
+  // -- exports -------------------------------------------------------------
+  // The server renders these with adgencov.export — the same module the
+  // manuscript scripts use — so a downloaded table matches the paper exactly.
+  var LAST_JOB_ID = null;
+
+  var EXPORTS_SINGLE = [
+    ["table.tex", "Estimator table (LaTeX)"],
+    ["table.csv", "Estimator table (CSV)"],
+    ["edges.csv", "Covariance edges (CSV)"],
+    ["blocks.csv", "Gene blocks (CSV)"],
+    ["covariance.csv", "Covariance matrix (CSV)"]
+  ];
+  var EXPORTS_COMPARE = [
+    ["compare.tex", "Comparison table (LaTeX)"],
+    ["compare.csv", "Comparison (CSV)"]
+  ];
+
+  function renderExports(isCompare) {
+    var host = $("export-panel");
+    if (!host || !LAST_JOB_ID) { return; }
+    var list = isCompare ? EXPORTS_COMPARE : EXPORTS_SINGLE;
+    var html = list.map(function (x) {
+      return '<a class="mini export-btn" download href="' + API + "/jobs/" +
+        encodeURIComponent(LAST_JOB_ID) + "/export/" + x[0] + '">' + esc(x[1]) + "</a>";
+    }).join("");
+    $("export-buttons").innerHTML = html;
+    $("export-note").textContent =
+      "Rendered server-side from this run by adgencov.export, the same code the "
+      + "manuscript scripts use — so what you download is what the paper reports.";
+    host.classList.remove("hidden");
+  }
+
   // -- multi-dataset views -------------------------------------------------
   // Banner shown above a pooled (combine) analysis: what was merged.
   function renderCombined(result) {

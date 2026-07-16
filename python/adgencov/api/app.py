@@ -19,9 +19,10 @@ job, and return ``202 Accepted`` with a :class:`JobSummary`.  Clients poll
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -329,6 +330,71 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
         return JobDetail(**job.detail())
+
+    # -- exports -------------------------------------------------------------
+    # Publication-ready downloads rendered by adgencov.export — the same module
+    # the manuscript scripts use, so a table downloaded here is identical to the
+    # one in the paper.
+    EXPORTS = {
+        "table.tex": ("application/x-tex", "ranking_to_latex"),
+        "table.csv": ("text/csv", "ranking_to_csv"),
+        "edges.csv": ("text/csv", "edges_to_csv"),
+        "blocks.csv": ("text/csv", "blocks_to_csv"),
+        "covariance.csv": ("text/csv", "covariance_to_csv"),
+        "compare.csv": ("text/csv", "compare_to_csv"),
+        "compare.tex": ("application/x-tex", "compare_to_latex"),
+    }
+
+    @app.get("/jobs/{job_id}/export/{artifact}", tags=["jobs"])
+    def export_job(job_id: str, artifact: str, store: JobStore = Depends(get_store)):
+        """Download a finished analysis as LaTeX or CSV.
+
+        *artifact* is one of table.tex, table.csv, edges.csv, blocks.csv,
+        covariance.csv (single analyses) or compare.csv, compare.tex (a compare
+        run).
+        """
+        from .. import export as exporters
+
+        if artifact not in EXPORTS:
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown export {artifact!r}; try one of {sorted(EXPORTS)}",
+            )
+        job = store.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+        detail = job.detail()
+        if detail.get("state") != "succeeded" or not detail.get("result"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"job {job_id!r} is {detail.get('state')}; exports need a succeeded job",
+            )
+
+        media, fn_name = EXPORTS[artifact]
+        payload = detail["result"]
+        is_compare = "comparison" in payload
+        if artifact.startswith("compare.") != is_compare:
+            kind = "a compare run" if is_compare else "a single analysis"
+            raise HTTPException(
+                status_code=409,
+                detail=f"{artifact} does not apply to {kind}",
+            )
+        kwargs = {}
+        if fn_name in ("ranking_to_latex", "ranking_to_csv"):
+            kwargs["criterion"] = (detail.get("params") or {}).get("criterion", "loo")
+        if fn_name in ("ranking_to_latex", "compare_to_latex"):
+            kwargs["caption"] = f"ADGENCOV estimator ranking ({job.label})"
+        try:
+            body = getattr(exporters, fn_name)(payload, **kwargs)
+        except ValueError as exc:                 # e.g. covariance omitted
+            raise HTTPException(status_code=409, detail=str(exc))
+        stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", (job.label or job_id))[:60]
+        return Response(
+            content=body,
+            media_type=media,
+            headers={"Content-Disposition":
+                     f'attachment; filename="adgencov_{stem}_{artifact}"'},
+        )
 
     @app.delete("/jobs/{job_id}", status_code=204, tags=["jobs"])
     def delete_job(job_id: str, store: JobStore = Depends(get_store)) -> None:

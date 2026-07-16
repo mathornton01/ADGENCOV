@@ -287,3 +287,11 @@ footer {
 }
 #combined-panel h2, #compare-panel h2 { margin-bottom: 8px; }
 #compare-panel h3 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
+
+/* export buttons */
+.export-row { display: flex; flex-wrap: wrap; gap: 8px; }
+a.export-btn {
+  text-decoration: none; display: inline-block; padding: 7px 14px; line-height: 1.2;
+}
+a.export-btn:hover { background: #223148; }
+#export-panel h2 { margin-bottom: 10px; }

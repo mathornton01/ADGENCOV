@@ -29,6 +29,7 @@ import urllib.request
 import numpy as np
 
 import adgencov
+from adgencov import export as exporters
 from adgencov._core import build_group_labels, factorize, load_expression_matrix, preprocess
 
 FPKM_URL = (
