@@ -69,6 +69,8 @@ __all__ = [
     "load_series",
     "map_probes_to_genes",
     "analyze_series",
+    "matrix_dir_url",
+    "list_platform_matrices",
     "supplementary_dir_url",
     "list_supplementary_files",
     "pick_supplementary_matrix",
@@ -79,7 +81,9 @@ __all__ = [
 ]
 
 GENE_COL = "gene"
-_ACCESSION_RE = re.compile(r"^GSE\d+$", re.IGNORECASE)
+_ACCESSION_RE = re.compile(r"^GSE\d+(-GPL\d+)?$", re.IGNORECASE)
+# The bare series id, used to build directory URLs, e.g. GSE271850-GPL17275 -> GSE271850.
+_SERIES_RE = re.compile(r"^(GSE\d+)", re.IGNORECASE)
 
 
 class GeoError(RuntimeError):
@@ -184,13 +188,48 @@ def series_matrix_url(accession: str) -> str:
     acc = accession.strip().upper()
     if not _ACCESSION_RE.match(acc):
         raise GeoError(f"not a GSE accession: {accession!r}")
-    digits = acc[3:]
+    series = _SERIES_RE.match(acc).group(1)
+    digits = series[3:]
     # Replace the last three digits with 'nnn' (whole number if <1000 digits).
     stub = ("GSE" + digits[:-3] + "nnn") if len(digits) > 3 else "GSEnnn"
     return (
         "https://ftp.ncbi.nlm.nih.gov/geo/series/"
-        f"{stub}/{acc}/matrix/{acc}_series_matrix.txt.gz"
+        f"{stub}/{series}/matrix/{acc}_series_matrix.txt.gz"
     )
+
+
+def matrix_dir_url(accession: str) -> str:
+    """Return the NCBI ``matrix/`` directory URL for a series accession."""
+    acc = accession.strip().upper()
+    if not _ACCESSION_RE.match(acc):
+        raise GeoError(f"not a GSE accession: {accession!r}")
+    series = _SERIES_RE.match(acc).group(1)
+    digits = series[3:]
+    stub = ("GSE" + digits[:-3] + "nnn") if len(digits) > 3 else "GSEnnn"
+    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{series}/matrix/"
+
+
+def list_platform_matrices(accession: str, *, timeout: float = 60.0) -> List[str]:
+    """Per-platform series-matrix accessions published for *accession*.
+
+    A multi-platform series (commonly a SuperSeries) has **no**
+    ``GSEnnn_series_matrix.txt.gz``.  GEO instead publishes one matrix per
+    platform, named ``GSEnnn-GPLnnn_series_matrix.txt.gz``.  Returns the
+    ``GSEnnn-GPLnnn`` accessions found, sorted; empty if the listing is
+    unavailable or the series is single-platform.
+    """
+    series = _SERIES_RE.match(accession.strip().upper())
+    if not series:
+        raise GeoError(f"not a GSE accession: {accession!r}")
+    base = series.group(1)
+    try:
+        with urllib.request.urlopen(matrix_dir_url(base), timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - best effort; caller falls back
+        return []
+    found = re.findall(rf"({re.escape(base)}-GPL\d+)_series_matrix\.txt\.gz", html,
+                       re.IGNORECASE)
+    return sorted({f.upper() for f in found})
 
 
 def default_cache_dir() -> str:
@@ -532,6 +571,22 @@ def fetch_series(
             meta = _series_metadata_only(dest)
             primary_err = exc
     else:
+        # No single-file series matrix. Before giving up, check whether this is a
+        # multi-platform series: GEO then publishes one matrix per platform
+        # (GSEnnn-GPLnnn_series_matrix.txt.gz) and no plain GSEnnn one.
+        plats = list_platform_matrices(acc, timeout=timeout)
+        if len(plats) == 1:
+            # Unambiguous: transparently use the only platform's matrix.
+            return fetch_series(
+                plats[0], cache_dir=cdir, force=force, timeout=timeout,
+                allow_supplementary=allow_supplementary,
+            )
+        if len(plats) > 1:
+            raise GeoError(
+                f"{acc} is a multi-platform series with no combined matrix; it "
+                f"publishes one matrix per platform. Re-run with one of: "
+                f"{', '.join(plats)}"
+            ) from download_err
         if not allow_supplementary:
             raise GeoError(
                 f"failed to download {acc} from {series_matrix_url(acc)}: {download_err}"
@@ -547,6 +602,13 @@ def fetch_series(
             series_metadata=meta,
         )
     except GeoError as exc2:
+        # The series matrix itself often says *why* there is nothing to analyse
+        # (SuperSeries, or a non-expression assay). Prefer that over the generic
+        # "no supplementary matrix" message, which would send the user hunting
+        # for a file that was never going to exist.
+        diagnosis = _series_diagnosis(dest) if download_err is None else ""
+        if diagnosis:
+            raise GeoError(f"{acc}: {diagnosis}") from primary_err
         raise GeoError(
             f"{acc}: no usable series-matrix table (tried {series_matrix_url(acc)}) "
             f"and no usable supplementary matrix was found ({exc2})"
@@ -700,9 +762,10 @@ def supplementary_dir_url(accession: str) -> str:
     acc = accession.strip().upper()
     if not _ACCESSION_RE.match(acc):
         raise GeoError(f"not a GSE accession: {accession!r}")
-    digits = acc[3:]
+    series = _SERIES_RE.match(acc).group(1)
+    digits = series[3:]
     stub = ("GSE" + digits[:-3] + "nnn") if len(digits) > 3 else "GSEnnn"
-    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{acc}/suppl/"
+    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{stub}/{series}/suppl/"
 
 
 def list_supplementary_files(accession: str, *, timeout: float = 60.0) -> List[str]:
@@ -1065,6 +1128,46 @@ def fetch_supplementary_series(
         f"{acc}: no supplementary file yielded a usable expression matrix ({detail})"
         + (f". {hint}" if hint else "")
     )
+
+
+# GEO !Series_type values that are not gene-expression assays.  ADGENCOV needs a
+# genes-by-samples expression matrix, so these can never work regardless of where
+# the data lives.
+_NON_EXPRESSION_TYPES = (
+    "genome binding", "occupancy", "chip-seq", "methylation profiling",
+    "genome variation", "snp genotyping", "protein profiling", "other",
+)
+
+
+def _series_diagnosis(dest: str) -> str:
+    """Explain an expression-free series matrix from its own metadata.
+
+    A series matrix that parses but carries no data rows is normal for RNA-seq
+    (values live in supplementary files).  But it is also what you get for a
+    SuperSeries, or for an assay that is not expression at all — and those two
+    cases need very different advice than "no supplementary matrix was found".
+    """
+    try:
+        meta = _series_metadata_only(dest) or {}
+    except Exception:  # noqa: BLE001
+        return ""
+    raw = " ".join(str(v) for v in meta.values()).lower()
+
+    subs = re.findall(r"superseries of:\s*(GSE\d+)", raw, re.IGNORECASE)
+    types = [t for t in _NON_EXPRESSION_TYPES if t in raw]
+
+    parts = []
+    if types:
+        parts.append(
+            "This series is not a gene-expression experiment (GEO type: "
+            f"{types[0]}); ADGENCOV needs a genes-by-samples expression matrix"
+        )
+    if subs:
+        parts.append(
+            "It is a SuperSeries; analyse one of its SubSeries instead: "
+            + ", ".join(sorted({s.upper() for s in subs}))
+        )
+    return ". ".join(parts) + "." if parts else ""
 
 
 # Binary / per-cell formats ADGENCOV cannot read: it needs a delimited

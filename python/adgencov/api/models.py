@@ -84,8 +84,9 @@ class GeoAnalyzeRequest(AnalyzeParams):
     accession: str = Field(
         ...,
         min_length=3,
-        description="GEO series accession, e.g. 'GSE52778'.",
-        examples=["GSE52778"],
+        description=("GEO series accession, e.g. 'GSE52778'. For a multi-platform "
+                     "series, address one platform: 'GSE271850-GPL17275'."),
+        examples=["GSE52778", "GSE271850-GPL17275"],
     )
     force: bool = Field(False, description="Bypass the on-disk GEO download cache.")
 
