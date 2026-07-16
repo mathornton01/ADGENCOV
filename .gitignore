@@ -42,3 +42,5 @@ docs/**/*.toc
 # Test scratch files
 tests/_tmp_*
 .env
+paper_out/
+build-wsl/
