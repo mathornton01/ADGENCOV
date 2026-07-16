@@ -65,6 +65,29 @@
     }
     $("fields-geo").classList.toggle("hidden", src !== "geo");
     $("fields-upload").classList.toggle("hidden", src !== "upload");
+    $("fields-multi").classList.toggle("hidden", src !== "multi");
+  }
+
+  // Accessions typed into the multi-dataset box, split on comma/space/newline.
+  function multiAccessions() {
+    return ($("multi-accessions").value || "")
+      .split(/[\s,;]+/).map(function (s) { return s.trim().toUpperCase(); })
+      .filter(function (s) { return s; });
+  }
+
+  function submitMulti() {
+    var accs = multiAccessions();
+    if (accs.length < 2) { throw new Error("Enter at least two GEO accessions."); }
+    if (accs.length > 8) { throw new Error("At most 8 accessions per run."); }
+    var body = commonParams();
+    body.accessions = accs;
+    body.force = false;
+    var mode = $("multi-mode").value;           // combine | compare
+    return fetch(API + "/analyze/" + mode, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
   }
 
   // -- status helpers ------------------------------------------------------
@@ -171,7 +194,11 @@
   function onSubmit(ev) {
     ev.preventDefault();
     var req;
-    try { req = currentSource === "geo" ? submitGeo() : submitUpload(); }
+    try {
+      req = currentSource === "geo" ? submitGeo()
+          : currentSource === "multi" ? submitMulti()
+          : submitUpload();
+    }
     catch (e) { setStatus(e.message, "err"); return; }
 
     busy(true);
@@ -179,7 +206,9 @@
     setStatus("Submitting…", null);
     window.ADGENCOV._lastSource = currentSource === "geo"
       ? ("GEO " + $("accession").value.trim())
-      : "uploaded matrix";
+      : currentSource === "multi"
+        ? ($("multi-mode").value + ": " + multiAccessions().join(" + "))
+        : "uploaded matrix";
     req.then(function (r) {
       return r.json().then(function (body) {
         if (r.status !== 202) {
@@ -190,7 +219,11 @@
       });
     })
     .then(function (summary) { setStatus("Queued job " + summary.id.slice(0, 8) + "…", null); return pollJob(summary.id); })
-    .then(function (result) { setStatus("Done.", "ok"); setProgress(1, "Complete", "ok"); render(result); })
+    .then(function (result) {
+      setStatus("Done.", "ok"); setProgress(1, "Complete", "ok");
+      // A compare run returns {datasets, comparison} rather than one analysis.
+      if (result && result.comparison) { renderCompare(result); } else { render(result); }
+    })
     .catch(function (e) { setStatus(e.message || String(e), "err"); setProgress(0, "Failed", "err"); })
     .then(function () { busy(false); setTimeout(function () { showProgress(false); }, 1200); });
   }
@@ -314,8 +347,83 @@
   }
 
   // -- render dispatch -----------------------------------------------------
+  // -- multi-dataset views -------------------------------------------------
+  // Banner shown above a pooled (combine) analysis: what was merged.
+  function renderCombined(result) {
+    var host = $("combined-panel");
+    if (!host) { return; }
+    var c = result.combined;
+    if (!c) { hide(host); return; }
+    var rows = c.datasets.map(function (d) {
+      return "<tr><td>" + esc(d.accession) + "</td><td>" + esc(d.title || "") +
+        '</td><td class="num">' + d.n_samples + "</td></tr>";
+    }).join("");
+    host.innerHTML =
+      "<h2>Combined datasets <span class=\"hint\">(" + c.n_datasets + " series pooled)</span></h2>" +
+      '<table class="hub-table"><thead><tr><th>Accession</th><th>Title</th><th>Samples</th></tr></thead>' +
+      "<tbody>" + rows + "</tbody></table>" +
+      '<p class="hint">Pooled <strong>' + c.n_samples_total + "</strong> samples · " +
+      c.n_shared_genes + " genes shared by all series · " + c.n_genes_analyzed +
+      " analyzed. Batch control: " + esc(c.batch_control) + ".</p>";
+    host.classList.remove("hidden");
+  }
+
+  // Compare view: per-dataset recommendation + pairwise agreement.
+  function renderCompare(result) {
+    $("results").classList.remove("hidden");
+    hide($("combined-panel"));
+    // The per-analysis panels below don't apply to a compare run.
+    ["ranking-table", "blocks"].forEach(function (id) {
+      var t = $(id); if (t) { t.innerHTML = ""; }
+    });
+    $("recommendation").innerHTML =
+      '<span class="badge">compare</span><span class="meta">' +
+      result.datasets.length + " datasets · common panel of " +
+      result.comparison.gene_panel_size + " genes drawn from " +
+      result.comparison.n_shared_genes + " shared</span>";
+
+    var c = result.comparison;
+    var dsRows = result.datasets.map(function (d) {
+      return "<tr><td>" + esc(d.accession) + "</td><td>" + esc(d.recommended) +
+        '</td><td class="num">' + fmt(d.loo_nll, 3) + '</td><td class="num">' +
+        d.n_samples + '</td><td class="num">' + d.n_edges + "</td></tr>";
+    }).join("");
+    var pairRows = c.pairs.map(function (p) {
+      return "<tr><td>" + esc(p.a) + " vs " + esc(p.b) + '</td><td class="num">' +
+        p.shared_edges + '</td><td class="num">' + fmt(p.edge_jaccard, 3) +
+        '</td><td class="num">' + (p.sign_agreement == null ? "—" : fmt(p.sign_agreement, 2)) +
+        "</td><td>" + (p.same_recommendation ? "yes" : "no") + "</td></tr>";
+    }).join("");
+    var rec = (c.recurrent_edges || []).slice(0, 12).map(function (e) {
+      return '<li class="pair-row"><span class="pn">' + esc(e.gene_a) + "</span>" +
+        '<span class="arrow">&harr;</span><span class="pn">' + esc(e.gene_b) +
+        '</span><span class="cov">' + e.n_datasets + " datasets</span></li>";
+    }).join("");
+
+    $("compare-panel").innerHTML =
+      "<h2>Dataset comparison</h2>" +
+      '<table class="hub-table"><thead><tr><th>Dataset</th><th>Recommended</th>' +
+      "<th>Best score</th><th>Samples</th><th>Edges</th></tr></thead><tbody>" + dsRows + "</tbody></table>" +
+      '<p class="hint">Consensus recommendation: <strong>' +
+      (c.consensus_recommendation ? esc(c.consensus_recommendation) : "none — datasets disagree") +
+      "</strong></p>" +
+      "<h3>Pairwise agreement</h3>" +
+      '<table class="hub-table"><thead><tr><th>Pair</th><th>Shared edges</th><th>Jaccard</th>' +
+      "<th>Sign agree</th><th>Same rec.</th></tr></thead><tbody>" + pairRows + "</tbody></table>" +
+      "<h3>Edges recovered in more than one dataset <span class=\"hint\">(" +
+      c.n_recurrent_edges + ")</span></h3>" +
+      (rec ? '<ul class="pairs-list">' + rec + "</ul>"
+           : '<p class="hint">No edge was recovered by more than one dataset at this threshold. ' +
+             "Raising the edge fraction widens the comparison.</p>");
+    $("compare-panel").classList.remove("hidden");
+    hide($("edge-detail")); hide($("cell-detail"));
+    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function render(result) {
     $("results").classList.remove("hidden");
+    hide($("compare-panel"));
+    renderCombined(result);
     SYMBOLS = {};                       // reset relabel state for the new run
     LAST = { result: result, bo: blockOrder(result.labels) };
     renderRecommendation(result);
@@ -1393,6 +1501,16 @@
     }
     $("criterion").addEventListener("change", syncCriterion);
     syncCriterion();
+    // Explain the active multi-dataset mode.
+    function syncMultiMode() {
+      var h = $("multi-mode-hint");
+      if (!h) { return; }
+      h.textContent = $("multi-mode").value === "combine"
+        ? "Keeps genes shared by every series and standardizes each gene within its own dataset before pooling, so batch differences don't drive the covariance."
+        : "Analyzes each series over one common gene panel, then reports estimator agreement and top-edge overlap.";
+    }
+    $("multi-mode").addEventListener("change", syncMultiMode);
+    syncMultiMode();
     selectSource("geo");
     loadVersion();
   }

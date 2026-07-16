@@ -25,6 +25,7 @@
       <div class="source-tabs" role="tablist">
         <button type="button" class="tab active" data-source="geo" role="tab" aria-selected="true">GEO accession</button>
         <button type="button" class="tab" data-source="upload" role="tab" aria-selected="false">Upload matrix</button>
+        <button type="button" class="tab" data-source="multi" role="tab" aria-selected="false">Multiple GEO</button>
       </div>
 
       <form id="analyze-form">
@@ -54,6 +55,20 @@
           </label>
           <label>Sample column regex
             <input type="text" id="sample_regex" value=".*" />
+          </label>
+        </div>
+
+        <div class="source-fields hidden" id="fields-multi">
+          <label class="wide">GEO accessions (two or more)
+            <textarea id="multi-accessions" rows="2" placeholder="GSE52778, GSE147507"></textarea>
+            <small class="hint">Comma-, space-, or newline-separated. Max 8.</small>
+          </label>
+          <label class="wide">Mode
+            <select id="multi-mode">
+              <option value="combine">Combine — pool samples into one analysis</option>
+              <option value="compare">Compare — analyze each, then contrast</option>
+            </select>
+            <small class="hint" id="multi-mode-hint"></small>
           </label>
         </div>
 
@@ -139,6 +154,8 @@
     <!-- ---------------- results ---------------- -->
     <section id="results" class="results hidden" aria-label="Results">
       <div class="panel recommendation" id="recommendation"></div>
+      <div class="panel hidden" id="combined-panel"></div>
+      <div class="panel hidden" id="compare-panel"></div>
 
       <div class="grid">
         <div class="panel">

@@ -277,3 +277,13 @@ footer {
   display: flex; justify-content: space-between; max-width: 1180px; margin: 0 auto;
   padding: 16px 20px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line);
 }
+
+/* multi-dataset input fields */
+.source-fields label.wide { grid-column: 1 / -1; }
+#multi-accessions {
+  display: block; width: 100%; margin-top: 4px; background: #0d1420; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  font-size: 13px; font-family: inherit; resize: vertical;
+}
+#combined-panel h2, #compare-panel h2 { margin-bottom: 8px; }
+#compare-panel h3 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
