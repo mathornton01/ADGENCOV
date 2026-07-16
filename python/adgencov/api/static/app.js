@@ -355,6 +355,8 @@
   var LAST_JOB_ID = null;
 
   var EXPORTS_SINGLE = [
+    ["figure.pdf", "⬇ Download figure (PDF)"],
+    ["figure.png", "⬇ Download figure (PNG)"],
     ["table.tex", "Estimator table (LaTeX)"],
     ["table.csv", "Estimator table (CSV)"],
     ["edges.csv", "Covariance edges (CSV)"],

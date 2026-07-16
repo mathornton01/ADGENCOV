@@ -295,3 +295,8 @@ a.export-btn {
 }
 a.export-btn:hover { background: #223148; }
 #export-panel h2 { margin-bottom: 10px; }
+
+a.export-btn[href$=".pdf"], a.export-btn[href$=".png"] {
+  border-color: var(--accent-2); color: var(--accent-2); font-weight: 600;
+}
+a.export-btn[href$=".pdf"]:hover, a.export-btn[href$=".png"]:hover { background: #12362a; }

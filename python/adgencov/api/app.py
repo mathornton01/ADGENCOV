@@ -341,6 +341,8 @@ def create_app(
         "edges.csv": ("text/csv", "edges_to_csv"),
         "blocks.csv": ("text/csv", "blocks_to_csv"),
         "covariance.csv": ("text/csv", "covariance_to_csv"),
+        "figure.pdf": ("application/pdf", None),
+        "figure.png": ("image/png", None),
         "compare.csv": ("text/csv", "compare_to_csv"),
         "compare.tex": ("application/x-tex", "compare_to_latex"),
     }
@@ -373,6 +375,25 @@ def create_app(
         media, fn_name = EXPORTS[artifact]
         payload = detail["result"]
         is_compare = "comparison" in payload
+
+        if fn_name is None:                      # figure.pdf / figure.png
+            from ..figure import FigureUnavailable, render_network
+            if is_compare:
+                raise HTTPException(
+                    status_code=409,
+                    detail="figure export applies to a single analysis, not a compare run",
+                )
+            try:
+                body = render_network(payload, fmt=artifact.rsplit(".", 1)[1])
+            except FigureUnavailable as exc:
+                raise HTTPException(status_code=501, detail=str(exc))
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+            stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", (job.label or job_id))[:60]
+            return Response(content=body, media_type=media,
+                            headers={"Content-Disposition":
+                                     f'attachment; filename="adgencov_{stem}_{artifact}"'})
+
         if artifact.startswith("compare.") != is_compare:
             kind = "a compare run" if is_compare else "a single analysis"
             raise HTTPException(

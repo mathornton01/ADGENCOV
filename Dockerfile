@@ -54,7 +54,7 @@ COPY --from=builder /src/python /app/python
 
 # Install the package plus its API + GEO runtime extras. The .so is packaged
 # via package-data (*.so) so no recompilation happens here.
-RUN pip install --no-cache-dir "./python[api,geo]"
+RUN pip install --no-cache-dir "./python[api,geo,figure]"
 
 ENV PYTHONUNBUFFERED=1
 
