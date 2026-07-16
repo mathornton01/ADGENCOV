@@ -1060,9 +1060,64 @@ def fetch_supplementary_series(
             continue
 
     detail = "; ".join(errors) if errors else f"tried {ranked + tar_names!r}"
+    hint = _unsupported_hint(acc, timeout)
     raise GeoError(
         f"{acc}: no supplementary file yielded a usable expression matrix ({detail})"
+        + (f". {hint}" if hint else "")
     )
+
+
+# Binary / per-cell formats ADGENCOV cannot read: it needs a delimited
+# genes-by-samples matrix, not single-cell or alignment data.
+_UNSUPPORTED_EXT = {
+    "h5": "single-cell HDF5", "h5ad": "AnnData HDF5", "loom": "Loom",
+    "bam": "BAM alignments", "cram": "CRAM alignments", "fastq": "FASTQ reads",
+    "fq": "FASTQ reads", "sra": "SRA archives", "bw": "BigWig coverage",
+    "bigwig": "BigWig coverage", "mtx": "Matrix Market",
+}
+
+
+def _unsupported_hint(acc: str, timeout: float) -> str:
+    """Explain an unusable series using GEO's supplementary ``filelist.txt``.
+
+    The manifest lists what a ``*_RAW.tar`` holds without downloading it (tens of
+    KB vs. potentially many GB).  When a series ships only formats we cannot read
+    — single-cell ``.h5``, BAMs, FASTQs — say so, because the size-cap message
+    alone wrongly implies that raising ``ADGENCOV_SUPPL_MAX_MB`` would help.
+    """
+    try:
+        url = supplementary_dir_url(acc) + "filelist.txt"
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - the hint is best-effort only
+        return ""
+
+    counts: Dict[str, int] = {}
+    total = 0
+    for line in text.splitlines()[1:]:
+        parts = line.split("\t")
+        if len(parts) < 2 or parts[0].strip().lower() != "file":
+            continue
+        ext = parts[1].rsplit(".", 1)[-1].strip().lower()
+        if ext in ("gz", "bz2", "zip") and parts[1].count(".") > 1:
+            ext = parts[1].rsplit(".", 2)[-2].strip().lower()
+        total += 1
+        counts[ext] = counts.get(ext, 0) + 1
+    if not total:
+        return ""
+
+    bad = {e: n for e, n in counts.items() if e in _UNSUPPORTED_EXT}
+    if bad and sum(bad.values()) == total:
+        ext, n = max(bad.items(), key=lambda kv: kv[1])
+        return (
+            f"Its supplementary archive holds {n} {_UNSUPPORTED_EXT[ext]} file(s) "
+            f"(.{ext}) and no delimited expression matrix, so ADGENCOV cannot use "
+            "this series: raising ADGENCOV_SUPPL_MAX_MB would download the archive "
+            "but still find nothing readable. ADGENCOV needs a bulk "
+            "genes-by-samples table; for a single-cell series, aggregate it to "
+            "pseudobulk first and upload that matrix."
+        )
+    return ""
 
 
 def read_tar_matrix(
