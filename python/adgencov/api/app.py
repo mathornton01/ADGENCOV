@@ -299,7 +299,8 @@ def create_app(
         *genes* is a comma-separated list (a heatmap cell supplies its row+column
         gene).  Returns each gene's strongest partners plus the direct pair score.
         """
-        from ..stringdb import StringError, interactions
+        from ..bioquery import BioQueryError
+        from ..stringdb import interactions
 
         ids = [g.strip() for g in (genes or "").split(",") if g.strip()]
         if not ids:
@@ -310,7 +311,10 @@ def create_app(
             data = interactions(
                 ids, species=species, limit=limit, required_score=required_score
             )
-        except StringError as exc:
+        # Catch BioQueryError, not just StringError: StringError *subclasses* it,
+        # so the transport layer's plain BioQueryError (e.g. STRING answering 404
+        # for ids it doesn't know, such as miRNAs) escaped and became a 500.
+        except BioQueryError as exc:
             raise HTTPException(status_code=502, detail=f"interaction lookup failed: {exc}")
         return InteractionsResponse(**data)
 

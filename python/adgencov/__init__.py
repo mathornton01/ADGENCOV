@@ -311,6 +311,49 @@ def _score_one(
 # Cap the recommender's worker pool.  Scoring is CPU-bound in released-GIL C++,
 # so more workers than cores just adds memory pressure (each fold allocates
 # p-by-p temporaries).  Override with ADGENCOV_MAX_WORKERS for tuning.
+def _cpu_budget() -> int:
+    """CPUs this process may actually use — container quota aware.
+
+    ``os.cpu_count()`` reports the *host's* cores and ignores cgroup CPU limits,
+    so inside a small container (Railway, Kubernetes, ECS) it over-subscribes
+    wildly: the recommender would start one CPU-bound thread per host core on a
+    1-2 core slice, saturate it, and starve everything else in the process —
+    including the HTTP server serving /health, which then looks like an outage.
+    """
+    # Start from affinity (respects taskset/cpuset), then apply the cgroup quota
+    # below. Affinity alone is NOT enough: container runtimes such as Railway
+    # cap CPU with a cfs quota while leaving affinity set to every host core, so
+    # returning here would report the host's cores and defeat the whole point.
+    try:
+        n = len(os.sched_getaffinity(0))  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        n = 0
+    if n <= 0:
+        n = os.cpu_count() or 1
+
+    # cgroup v2, then v1: quota/period == the fractional core allowance.
+    for quota_path, period_path in (
+        ("/sys/fs/cgroup/cpu.max", None),
+        ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu/cpu.cfs_period_us"),
+    ):
+        try:
+            with open(quota_path) as fh:
+                raw = fh.read().split()
+            if period_path is None:                 # v2: "<quota|max> <period>"
+                if raw[0] == "max":
+                    continue
+                quota, period = int(raw[0]), int(raw[1])
+            else:                                   # v1: separate files
+                quota = int(raw[0])
+                with open(period_path) as fh:
+                    period = int(fh.read().strip())
+            if quota > 0 and period > 0:
+                n = min(n, max(1, quota // period))
+        except (OSError, ValueError, IndexError):
+            continue
+    return max(1, n)
+
+
 def _max_workers(n_tasks: int) -> int:
     env = os.environ.get("ADGENCOV_MAX_WORKERS")
     if env:
@@ -320,7 +363,12 @@ def _max_workers(n_tasks: int) -> int:
                 return min(n_tasks, cap)
         except ValueError:
             pass
-    return max(1, min(n_tasks, os.cpu_count() or 1))
+    budget = _cpu_budget()
+    # Leave one CPU for the rest of the process (the API event loop and its
+    # thread pool) so a running analysis can never make the service unreachable.
+    if budget > 1:
+        budget -= 1
+    return max(1, min(n_tasks, budget))
 
 
 def _rank_estimators(
