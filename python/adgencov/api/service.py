@@ -35,7 +35,7 @@ from .._core import (
     load_expression_matrix,
     preprocess,
 )
-from .models import GeoAnalyzeRequest, UploadParams
+from .models import GeoAnalyzeRequest, MultiAnalyzeRequest, UploadParams
 
 
 def run_upload_analysis(
@@ -128,6 +128,52 @@ def run_geo_analysis(
     payload = result.to_dict()
     payload["source"] = {"kind": "geo", "accession": req.accession}
     return payload
+
+
+def run_combine_analysis(
+    req: "MultiAnalyzeRequest",
+    progress: Optional[ProgressFn] = None,
+) -> Dict[str, Any]:
+    """Pool several GEO series into one matrix and analyze them together."""
+    from ..multi import combine_series
+
+    return combine_series(
+        list(req.accessions),
+        n_genes=req.n_genes,
+        min_mean=req.min_mean,
+        log_transform=req.log_transform,
+        group=req.group,
+        n_blocks=req.n_blocks,
+        top_fraction=req.top_fraction,
+        criterion=req.criterion,
+        ebic_gamma=req.ebic_gamma,
+        cv_folds=req.cv_folds,
+        force=req.force,
+        progress=progress or _noop_progress,
+    )
+
+
+def run_compare_analysis(
+    req: "MultiAnalyzeRequest",
+    progress: Optional[ProgressFn] = None,
+) -> Dict[str, Any]:
+    """Analyze several GEO series separately and compare the recovered structure."""
+    from ..multi import compare_series
+
+    return compare_series(
+        list(req.accessions),
+        n_genes=req.n_genes,
+        min_mean=req.min_mean,
+        log_transform=req.log_transform,
+        group=req.group,
+        n_blocks=req.n_blocks,
+        top_fraction=req.top_fraction,
+        criterion=req.criterion,
+        ebic_gamma=req.ebic_gamma,
+        cv_folds=req.cv_folds,
+        force=req.force,
+        progress=progress or _noop_progress,
+    )
 
 
 def _band(report: ProgressFn, lo: float, hi: float) -> ProgressFn:

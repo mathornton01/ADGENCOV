@@ -39,13 +39,19 @@ from .models import (
     JobDetail,
     JobList,
     JobSummary,
+    MultiAnalyzeRequest,
     ProteinTranslateRequest,
     ProteinTranslateResponse,
     SymbolTranslateRequest,
     SymbolTranslateResponse,
     UploadParams,
 )
-from .service import run_geo_analysis, run_upload_analysis
+from .service import (
+    run_combine_analysis,
+    run_compare_analysis,
+    run_geo_analysis,
+    run_upload_analysis,
+)
 
 # Origins allowed to call the API from a browser.  The hosted portal lives on
 # thorntonstatistical.com; localhost entries cover local GUI development.
@@ -176,6 +182,45 @@ def create_app(
             JobKind.GEO,
             lambda progress: run_geo_analysis(req, progress=progress),
             label=req.accession,
+            params=req.model_dump(),
+        )
+        return JobSummary(**job.summary())
+
+    # -- multi-dataset: combine / compare -----------------------------------
+    @app.post("/analyze/combine", response_model=JobSummary, status_code=202, tags=["analyze"])
+    def analyze_combine(
+        req: MultiAnalyzeRequest,
+        store: JobStore = Depends(get_store),
+    ) -> JobSummary:
+        """Pool several GEO series into one matrix and run a single analysis.
+
+        Only genes shared by every series are kept, and each gene is standardized
+        within its own dataset before pooling, so the covariance reflects
+        within-study co-variation rather than which study a sample came from.
+        """
+        job = store.submit(
+            JobKind.COMBINE,
+            lambda progress: run_combine_analysis(req, progress=progress),
+            label="+".join(req.accessions),
+            params=req.model_dump(),
+        )
+        return JobSummary(**job.summary())
+
+    @app.post("/analyze/compare", response_model=JobSummary, status_code=202, tags=["analyze"])
+    def analyze_compare(
+        req: MultiAnalyzeRequest,
+        store: JobStore = Depends(get_store),
+    ) -> JobSummary:
+        """Analyze several GEO series separately and compare the results.
+
+        Reports which estimator each dataset selects, pairwise top-edge overlap
+        (Jaccard) and sign agreement, and the edges recovered in more than one
+        dataset.
+        """
+        job = store.submit(
+            JobKind.COMPARE,
+            lambda progress: run_compare_analysis(req, progress=progress),
+            label=" vs ".join(req.accessions),
             params=req.model_dump(),
         )
         return JobSummary(**job.summary())

@@ -90,6 +90,25 @@ class GeoAnalyzeRequest(AnalyzeParams):
     force: bool = Field(False, description="Bypass the on-disk GEO download cache.")
 
 
+class MultiAnalyzeRequest(AnalyzeParams):
+    """Body for ``POST /analyze/combine`` and ``POST /analyze/compare``.
+
+    *combine* pools the accessions into one matrix (shared genes, each gene
+    standardized within its own dataset to control batch effects) and runs a
+    single analysis.  *compare* analyzes each accession separately and reports
+    estimator agreement and top-edge overlap.
+    """
+
+    accessions: List[str] = Field(
+        ...,
+        min_length=2,
+        max_length=8,
+        description="Two or more GEO series accessions.",
+        examples=[["GSE52778", "GSE147507"]],
+    )
+    force: bool = Field(False, description="Bypass the on-disk GEO download cache.")
+
+
 class JobSummary(BaseModel):
     """Lightweight job view returned by submit and list endpoints."""
 

@@ -331,6 +331,21 @@ Returns
   // ---- preprocess.hpp ----------------------------------------------------
   py::class_<Dataset>(m, "Dataset",
                       "Analysis-ready standardized samples-by-genes matrix + names.")
+      // Constructible from Python so a caller that assembles its own matrix —
+      // e.g. adgencov.multi, which merges several GEO series — can drive
+      // build_group_labels through the same C++ partitioning as preprocess().
+      .def(py::init([](Eigen::MatrixXd X, std::vector<std::string> genes) {
+             if (static_cast<Eigen::Index>(genes.size()) != X.cols()) {
+               throw std::invalid_argument(
+                   "Dataset: genes length must equal number of columns of X");
+             }
+             Dataset d;
+             d.X = std::move(X);
+             d.genes = std::move(genes);
+             return d;
+           }),
+           py::arg("X"), py::arg("genes"),
+           "Build a Dataset from a samples-by-genes matrix and its gene names.")
       .def_readonly("X", &Dataset::X)
       .def_readonly("genes", &Dataset::genes);
 

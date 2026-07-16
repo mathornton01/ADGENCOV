@@ -32,10 +32,13 @@ class JobState(str, Enum):
 
 
 class JobKind(str, Enum):
-    """What produced the job — an uploaded matrix or a GEO accession."""
+    """What produced the job — an uploaded matrix, a GEO accession, or a
+    multi-dataset combine/compare run."""
 
     UPLOAD = "upload"
     GEO = "geo"
+    COMBINE = "combine"
+    COMPARE = "compare"
 
 
 @dataclass
