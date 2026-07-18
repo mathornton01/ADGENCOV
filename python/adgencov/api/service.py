@@ -36,6 +36,7 @@ from .._core import (
     preprocess,
 )
 from .models import GeoAnalyzeRequest, MultiAnalyzeRequest, UploadParams
+from ..pipeline import choose_group, grouping_meta
 
 
 def run_upload_analysis(
@@ -82,22 +83,37 @@ def run_upload_analysis(
             "at least 3 are required for covariance estimation"
         )
 
-    report(0.18, "Building gene blocks")
-    labels = build_group_labels(dataset, params.group, n_blocks=params.n_blocks)
-    codes = factorize(labels)
     X = np.asarray(dataset.X, dtype=float)
-    result = analyze(
-        X,
-        codes,
-        genes=list(dataset.genes),
+    genes = list(dataset.genes)
+    sel = dict(
         top_fraction=params.top_fraction,
-        progress=_band(report, 0.20, 0.98),
         cv_folds=params.cv_folds,
         criterion=params.criterion,
         ebic_gamma=params.ebic_gamma,
+        families=params.families,
+        ad_modes=params.ad_modes,
+        sweep=params.sweep,
     )
+
+    def run_one(group, n_blocks, prog):
+        labels = build_group_labels(dataset, group, n_blocks=n_blocks)
+        codes = factorize(labels)
+        return analyze(X, codes, genes=genes, progress=prog, **sel)
+
+    if params.group == "auto":
+        report(0.18, "Trying built-in symmetry structures")
+        result, gmeta = choose_group(
+            run_one, default_n_blocks=params.n_blocks,
+            progress=_band(report, 0.20, 0.98),
+        )
+    else:
+        report(0.18, "Building gene blocks")
+        result = run_one(params.group, params.n_blocks, _band(report, 0.20, 0.98))
+        gmeta = grouping_meta(params.group, params.n_blocks)
+
     payload = result.to_dict()
     payload["source"] = {"kind": "upload"}
+    payload["grouping"] = gmeta
     return payload
 
 
@@ -110,23 +126,39 @@ def run_geo_analysis(
     # (the API package itself only hard-depends on the core + numpy).
     from ..geo import analyze_series
 
+    from ..geo import load_series
+
     report = progress or _noop_progress
-    result = analyze_series(
-        req.accession,
-        n_genes=req.n_genes,
-        min_mean=req.min_mean,
-        log_transform=req.log_transform,
-        group=req.group,
-        n_blocks=req.n_blocks,
-        top_fraction=req.top_fraction,
-        force=req.force,
-        progress=report,
-        cv_folds=req.cv_folds,
-        criterion=req.criterion,
-        ebic_gamma=req.ebic_gamma,
+    sel = dict(
+        n_genes=req.n_genes, min_mean=req.min_mean, log_transform=req.log_transform,
+        top_fraction=req.top_fraction, cv_folds=req.cv_folds, criterion=req.criterion,
+        ebic_gamma=req.ebic_gamma, families=req.families, ad_modes=req.ad_modes,
+        sweep=req.sweep,
     )
+
+    if req.group == "auto":
+        # Fetch/parse once, then reuse the parsed series for every grouping so a
+        # group sweep does not re-download the accession.
+        report(0.02, f"Fetching {req.accession} from GEO")
+        series = load_series(req.accession, force=req.force)
+
+        def run_one(group, n_blocks, prog):
+            return analyze_series(series, group=group, n_blocks=n_blocks,
+                                  progress=prog, **sel)
+
+        result, gmeta = choose_group(
+            run_one, default_n_blocks=req.n_blocks, progress=_band(report, 0.05, 0.99),
+        )
+    else:
+        result = analyze_series(
+            req.accession, group=req.group, n_blocks=req.n_blocks,
+            force=req.force, progress=report, **sel,
+        )
+        gmeta = grouping_meta(req.group, req.n_blocks)
+
     payload = result.to_dict()
     payload["source"] = {"kind": "geo", "accession": req.accession}
+    payload["grouping"] = gmeta
     return payload
 
 

@@ -300,3 +300,8 @@ a.export-btn[href$=".pdf"], a.export-btn[href$=".png"] {
   border-color: var(--accent-2); color: var(--accent-2); font-weight: 600;
 }
 a.export-btn[href$=".pdf"]:hover, a.export-btn[href$=".png"]:hover { background: #12362a; }
+
+/* automatic-grouping sweep disclosure under the recommendation */
+.group-sweep { width: 100%; margin-top: 10px; }
+.group-sweep summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.group-sweep table { margin-top: 8px; }

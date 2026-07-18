@@ -136,8 +136,26 @@
       top_fraction: parseFloat($("top_fraction").value),
       criterion: criterion,
       ebic_gamma: parseFloat($("ebic_gamma").value),
-      cv_folds: criterion === "kfold" ? 10 : null
+      cv_folds: criterion === "kfold" ? 10 : null,
+      families: estimatorFamilies(),
+      ad_modes: adModes(),
+      sweep: $("sweep").value === "true"
     };
+  }
+
+  // Estimator dropdown -> the families the server should score ("all" => null).
+  function estimatorFamilies() {
+    var v = $("estimator").value;
+    return v === "all" ? null : [v];
+  }
+  // AD checkbox + flavor -> the ad_modes list. A plain ("none") baseline is
+  // always included so the recommender can show whether AD actually helped.
+  function adModes() {
+    if (!$("ad_on").checked) { return ["none"]; }
+    var flavor = $("ad_flavor").value;
+    if (flavor === "target") { return ["none", "target"]; }
+    if (flavor === "projection") { return ["none", "projection"]; }
+    return ["none", "projection", "target"];
   }
 
   function submitGeo() {
@@ -169,6 +187,10 @@
     if (p.cv_folds != null) { fd.append("cv_folds", p.cv_folds); }
     fd.append("sample_regex", $("sample_regex").value);
     fd.append("gene_col", $("gene_col").value);
+    fd.append("sweep", p.sweep);
+    // Lists go as JSON so multipart form doesn't mangle them; null = "all".
+    if (p.families != null) { fd.append("families", JSON.stringify(p.families)); }
+    if (p.ad_modes != null) { fd.append("ad_modes", JSON.stringify(p.ad_modes)); }
     return fetch(API + "/analyze/upload", { method: "POST", body: fd });
   }
 
@@ -513,12 +535,30 @@
     // stash the submitted job's kind/label on the last render for an honest
     // "GEO GSE…" vs "uploaded matrix" label instead of guessing.
     var srcTxt = (window.ADGENCOV && window.ADGENCOV._lastSource) || "analysis";
+    var g = result.grouping || {};
+    var groupTxt = g.chosen
+      ? (g.mode === "auto" ? "auto-group: " + g.chosen : "group: " + g.chosen)
+      : "";
     $("recommendation").innerHTML =
       '<span class="badge">' + esc(result.recommended) + "</span>" +
       '<span class="meta">recommended estimator &middot; LOO&nbsp;NLL ' +
         fmt(best.loo_nll) + " &middot; " + result.n_genes + " genes &middot; " +
         (result.labels ? new Set(result.labels).size : 0) + " blocks &middot; " +
-        esc(srcTxt) + "</span>";
+        (groupTxt ? esc(groupTxt) + " &middot; " : "") + esc(srcTxt) + "</span>" +
+      (g.mode === "auto" && g.candidates ? renderGroupSweep(g) : "");
+  }
+
+  // When group=auto, show which structures were tried and their scores.
+  function renderGroupSweep(g) {
+    var rows = g.candidates.map(function (c, i) {
+      return "<tr" + (i === 0 ? ' class="best"' : "") + "><td>" + esc(c.group) +
+        "</td><td>" + esc(c.recommended) + '</td><td class="num">' +
+        fmt(c.score, 3) + "</td></tr>";
+    }).join("");
+    return '<details class="group-sweep"><summary>Automatic grouping: chose <strong>' +
+      esc(g.chosen) + "</strong> of " + g.candidates.length + " tried</summary>" +
+      '<table class="hub-table"><thead><tr><th>Structure</th><th>Best estimator</th>' +
+      "<th>Score</th></tr></thead><tbody>" + rows + "</tbody></table></details>";
   }
 
   function renderRanking(ranking) {
@@ -1541,6 +1581,12 @@
     }
     $("criterion").addEventListener("change", syncCriterion);
     syncCriterion();
+    // AD flavor only matters when AD is applied.
+    function syncAd() {
+      $("ad-flavor-field").classList.toggle("hidden", !$("ad_on").checked);
+    }
+    $("ad_on").addEventListener("change", syncAd);
+    syncAd();
     // Explain the active multi-dataset mode.
     function syncMultiMode() {
       var h = $("multi-mode-hint");

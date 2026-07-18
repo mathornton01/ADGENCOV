@@ -1516,6 +1516,9 @@ def analyze_series(
     cv_folds: Optional[int] = None,
     criterion: str = "loo",
     ebic_gamma: float = 0.5,
+    families: Optional[Sequence[str]] = None,
+    ad_modes: Optional[Sequence[str]] = None,
+    sweep: bool = True,
 ) -> AnalysisResult:
     """Run the full recommender on a GEO series — pull → preprocess → analyze.
 
@@ -1573,5 +1576,8 @@ def analyze_series(
         cv_folds=cv_folds,
         criterion=criterion,
         ebic_gamma=ebic_gamma,
+        families=families,
+        ad_modes=ad_modes,
+        sweep=sweep,
     )
     return result

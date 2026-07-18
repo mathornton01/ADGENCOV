@@ -26,11 +26,32 @@ class AnalyzeParams(BaseModel):
     group: str = Field(
         "gene_family",
         description=(
-            "Grouping strategy: gene_family, chromosome, reactome, go_process, "
-            "custom, correlation_blocks, or hierarchical_wreath."
+            "Symmetry grouping for Algebraic Diversity: gene_family, chromosome, "
+            "reactome, go_process, custom, correlation_blocks, hierarchical_wreath, "
+            "or 'auto' to try several built-in structures and keep the best."
         ),
     )
     n_blocks: int = Field(4, ge=1, description="Number of blocks for correlation_blocks / wreath.")
+    families: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Estimator families to score: any of sample, ridge, lasso, "
+            "elastic_net, ledoit_wolf, oas. Null = all (run every estimator). "
+            "Give one for a single-estimator run."
+        ),
+    )
+    ad_modes: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Algebraic-Diversity variants to include: 'none' (ordinary), "
+            "'projection' (hard Reynolds projection), 'target' (Eq. 2 convex "
+            "shrinkage). Null = all three. Use ['none'] to turn AD off."
+        ),
+    )
+    sweep: bool = Field(
+        True,
+        description="Sweep each estimator's hyper-parameters (vs a single default).",
+    )
     top_fraction: float = Field(
         0.01, gt=0.0, le=1.0, description="Fraction of gene pairs kept as network edges."
     )

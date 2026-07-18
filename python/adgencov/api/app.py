@@ -18,6 +18,7 @@ job, and return ``202 Accepted`` with a :class:`JobSummary`.  Clients poll
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Optional
@@ -178,6 +179,12 @@ def create_app(
         top_fraction: float = Form(0.01),
         sample_regex: str = Form(".*"),
         gene_col: str = Form("gene_short_name"),
+        cv_folds: Optional[int] = Form(None),
+        criterion: str = Form("loo"),
+        ebic_gamma: float = Form(0.5),
+        sweep: bool = Form(True),
+        families: Optional[str] = Form(None),   # JSON list, or null = all
+        ad_modes: Optional[str] = Form(None),   # JSON list, or null = all
     ) -> JobSummary:
         raw = await file.read()
         if len(raw) > MAX_UPLOAD_BYTES:
@@ -185,6 +192,18 @@ def create_app(
                 status_code=413,
                 detail=f"upload exceeds {MAX_UPLOAD_BYTES} bytes",
             )
+
+        def _json_list(name: str, s: Optional[str]):
+            if s is None or s == "":
+                return None
+            try:
+                v = json.loads(s)
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"{name} must be a JSON list")
+            if not isinstance(v, list):
+                raise HTTPException(status_code=422, detail=f"{name} must be a JSON list")
+            return [str(x) for x in v]
+
         try:
             params = UploadParams(
                 n_genes=n_genes,
@@ -195,6 +214,12 @@ def create_app(
                 top_fraction=top_fraction,
                 sample_regex=sample_regex,
                 gene_col=gene_col,
+                cv_folds=cv_folds,
+                criterion=criterion,
+                ebic_gamma=ebic_gamma,
+                sweep=sweep,
+                families=_json_list("families", families),
+                ad_modes=_json_list("ad_modes", ad_modes),
             )
         except ValueError as exc:  # pydantic validation
             raise HTTPException(status_code=422, detail=str(exc))

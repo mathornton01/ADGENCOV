@@ -75,6 +75,9 @@ __all__ = [
     "agglomerative_average",
     "build_group_labels",
     "candidate_grid",
+    "build_candidate_specs",
+    "ESTIMATOR_FAMILIES",
+    "AD_MODES",
     "ebic_score",
     "estimate_covariance",
     "factorize",
@@ -371,6 +374,80 @@ def _max_workers(n_tasks: int) -> int:
     return max(1, min(n_tasks, budget))
 
 
+# Shrinkage families exposed as user-selectable estimators, mapped to the C++
+# method names for each Algebraic-Diversity mode:
+#   none       – the ordinary estimator (no symmetry)
+#   projection – ad_* : hard Reynolds projection onto the group (lambda = 1)
+#   target     – ad_target_* : the Eq.(2) convex shrinkage toward P_G(S)
+# A None entry means that family has no variant in that mode.
+_FAMILY_METHODS: Dict[str, Dict[str, Optional[str]]] = {
+    "sample":      {"none": "sample",      "projection": "ad_sample",      "target": None},
+    "ridge":       {"none": "ridge",       "projection": "ad_ridge",       "target": "ad_target_ridge"},
+    "lasso":       {"none": "lasso",       "projection": "ad_lasso",       "target": None},
+    "elastic_net": {"none": "elastic_net", "projection": "ad_elastic_net", "target": None},
+    "ledoit_wolf": {"none": "lw",          "projection": "ad_linear_lw",   "target": "ad_target_lw"},
+    "oas":         {"none": "oas",         "projection": "ad_oas",         "target": "ad_target_oas"},
+}
+ESTIMATOR_FAMILIES = tuple(_FAMILY_METHODS)
+AD_MODES = ("none", "projection", "target")
+
+
+def _param_sweep(method: str, sweep: bool) -> List[Dict[str, float]]:
+    """Hyper-parameter settings for *method*: the full sweep or a single default."""
+    if method in ("ridge", "ad_ridge"):
+        return [{"alpha": a} for a in ([0.05, 0.1, 0.2, 0.4, 0.7] if sweep else [0.2])]
+    if method == "ad_target_ridge":
+        return [{"lam": l} for l in ([0.1, 0.3, 0.5, 0.7, 0.9] if sweep else [0.5])]
+    if method in ("lasso", "ad_lasso"):
+        return [{"lam": l} for l in ([0.01, 0.03, 0.1, 0.3] if sweep else [0.05])]
+    if method in ("elastic_net", "ad_elastic_net"):
+        return [{"lam": l, "l1_ratio": 0.25} for l in ([0.01, 0.03, 0.1, 0.3] if sweep else [0.05])]
+    return [{}]        # lw / oas / ad_*_lw|oas / ad_target_* / sample: no scalar knobs
+
+
+def build_candidate_specs(
+    p: Optional[int] = None,
+    n: Optional[int] = None,
+    *,
+    families: Optional[Sequence[str]] = None,
+    ad_modes: Optional[Sequence[str]] = None,
+    sweep: bool = True,
+) -> List["EstimatorSpec"]:
+    """Assemble an estimator grid from user choices.
+
+    ``families`` restricts to a subset of :data:`ESTIMATOR_FAMILIES` (``None`` =
+    all).  ``ad_modes`` selects which Algebraic-Diversity variants to include
+    from :data:`AD_MODES` (``None`` = all three); ``["none"]`` gives ordinary
+    estimators only, so AD becomes a simple on/off toggle over any method.
+    ``sweep`` toggles the hyper-parameter sweep vs. a single default per method.
+    """
+    fams = list(ESTIMATOR_FAMILIES) if families is None else [str(f) for f in families]
+    modes = list(AD_MODES) if ad_modes is None else [str(m) for m in ad_modes]
+    bad_f = [f for f in fams if f not in _FAMILY_METHODS]
+    bad_m = [m for m in modes if m not in AD_MODES]
+    if bad_f:
+        raise ValueError(f"unknown estimator family/ies {bad_f}; choose from {ESTIMATOR_FAMILIES}")
+    if bad_m:
+        raise ValueError(f"unknown AD mode(s) {bad_m}; choose from {AD_MODES}")
+
+    specs: List[EstimatorSpec] = []
+    seen = set()
+    for fam in fams:
+        for mode in modes:
+            method = _FAMILY_METHODS[fam].get(mode)
+            if not method:
+                continue
+            for params in _param_sweep(method, sweep):
+                key = (method, tuple(sorted(params.items())))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(EstimatorSpec(method, params))
+    if not specs:
+        raise ValueError("no estimators selected (check families / ad_modes)")
+    return specs
+
+
 def _rank_estimators(
     X: np.ndarray,
     labels: List[int],
@@ -378,14 +455,17 @@ def _rank_estimators(
     cv_folds: Optional[int] = None,
     criterion: str = "loo",
     ebic_gamma: float = 0.5,
+    specs: Optional[Sequence["EstimatorSpec"]] = None,
 ) -> List[_RankedEstimator]:
     """Score the candidate grid, ascending by CV NLL, reporting per-candidate
-    progress.  With ``cv_folds=None`` (default) this is numerically identical to
-    ``adgencov::recommend_estimator`` — same primitives, same stable sort — but
-    scores the grid concurrently across cores (the C++ calls release the GIL)
-    and reports progress as each candidate finishes.  With ``cv_folds=k`` it
-    scores by k-fold CV instead of exact leave-one-out (faster; scores shift)."""
-    grid = candidate_grid(X.shape[1], X.shape[0])
+    progress.  With ``cv_folds=None`` (default) and no explicit ``specs`` this is
+    numerically identical to ``adgencov::recommend_estimator`` — same primitives,
+    same stable sort — but scores the grid concurrently across cores (the C++
+    calls release the GIL) and reports progress as each candidate finishes.  With
+    ``cv_folds=k`` it scores by k-fold CV instead of exact leave-one-out (faster;
+    scores shift).  ``specs`` overrides the candidate list (see
+    :func:`build_candidate_specs`)."""
+    grid = list(specs) if specs is not None else candidate_grid(X.shape[1], X.shape[0])
     total = len(grid)
     # Slot results by grid index so ties keep candidate-grid order under the
     # stable sort below, exactly as the sequential C++ path does.
@@ -436,6 +516,9 @@ def analyze(
     cv_folds: Optional[int] = None,
     criterion: str = "loo",
     ebic_gamma: float = 0.5,
+    families: Optional[Sequence[str]] = None,
+    ad_modes: Optional[Sequence[str]] = None,
+    sweep: bool = True,
 ) -> AnalysisResult:
     """Run the recommender end-to-end on a standardized samples-by-genes matrix.
 
@@ -484,6 +567,14 @@ def analyze(
         genes = [f"gene_{i}" for i in range(p)]
     else:
         genes = list(genes)
+    # A restricted selection builds an explicit grid; the unrestricted default
+    # keeps using the C++ candidate_grid, so existing callers (and the golden
+    # parity tests) are numerically unchanged.
+    specs = None
+    if families is not None or ad_modes is not None or not sweep:
+        specs = build_candidate_specs(
+            p, X.shape[0], families=families, ad_modes=ad_modes, sweep=sweep
+        )
     ranking = _rank_estimators(
         X,
         labels,
@@ -491,6 +582,7 @@ def analyze(
         cv_folds=cv_folds,
         criterion=criterion,
         ebic_gamma=ebic_gamma,
+        specs=specs,
     )
     if not ranking:
         raise RuntimeError("no estimator in the grid produced a valid fit")
