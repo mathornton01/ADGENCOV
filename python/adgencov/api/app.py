@@ -26,6 +26,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 # The single-page dashboard (Phase D) ships as static files next to this
 # package; the API serves it directly so the whole product is one deployable.
@@ -221,7 +222,7 @@ def create_app(
                 families=_json_list("families", families),
                 ad_modes=_json_list("ad_modes", ad_modes),
             )
-        except ValueError as exc:  # pydantic validation
+        except (ValidationError, ValueError) as exc:  # pydantic v2 raises ValidationError
             raise HTTPException(status_code=422, detail=str(exc))
 
         label = file.filename or "upload"

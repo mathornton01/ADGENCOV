@@ -8,9 +8,24 @@ create a second source of truth to keep in sync with the core.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Allowed values, kept in one place so the wire contract can't drift from the
+# core.  These mirror adgencov.ESTIMATOR_FAMILIES / AD_MODES and the groupings
+# adgencov._core.build_group_labels accepts (plus "auto").
+_VALID_GROUPS = frozenset({
+    "none", "gene_family", "chromosome", "reactome", "go_process",
+    "correlation_blocks", "hierarchical_wreath", "custom", "custom_group_map",
+    "auto",
+})
+_VALID_FAMILIES = frozenset({
+    "sample", "ridge", "lasso", "elastic_net", "ledoit_wolf", "oas",
+})
+_VALID_AD_MODES = frozenset({"none", "projection", "target", "optimal"})
+_ACCESSION_RE = re.compile(r"^GSE\d+(-GPL\d+)?$", re.IGNORECASE)
 
 
 class AnalyzeParams(BaseModel):
@@ -86,6 +101,49 @@ class AnalyzeParams(BaseModel):
         ),
     )
 
+    @field_validator("group")
+    @classmethod
+    def _check_group(cls, v: str) -> str:
+        if v not in _VALID_GROUPS:
+            raise ValueError(f"group must be one of {sorted(_VALID_GROUPS)}, got {v!r}")
+        return v
+
+    @field_validator("families")
+    @classmethod
+    def _check_families(cls, v):
+        if v is None:
+            return v
+        if len(v) == 0:
+            raise ValueError("families cannot be an empty list; use null for all")
+        bad = [f for f in v if f not in _VALID_FAMILIES]
+        if bad:
+            raise ValueError(
+                f"unknown estimator families {bad}; choose from {sorted(_VALID_FAMILIES)}"
+            )
+        return v
+
+    @field_validator("ad_modes")
+    @classmethod
+    def _check_ad_modes(cls, v):
+        if v is None:
+            return v
+        if len(v) == 0:
+            raise ValueError("ad_modes cannot be an empty list; use null for all")
+        bad = [m for m in v if m not in _VALID_AD_MODES]
+        if bad:
+            raise ValueError(f"unknown AD modes {bad}; choose from {sorted(_VALID_AD_MODES)}")
+        return v
+
+    @model_validator(mode="after")
+    def _check_blocks_vs_genes(self):
+        # A block partition can't request more blocks than genes.
+        if self.group in ("correlation_blocks", "hierarchical_wreath") \
+                and self.n_blocks > self.n_genes:
+            raise ValueError(
+                f"n_blocks ({self.n_blocks}) cannot exceed n_genes ({self.n_genes})"
+            )
+        return self
+
 
 class UploadParams(AnalyzeParams):
     """Extra knobs that only apply to an uploaded matrix (not GEO)."""
@@ -111,6 +169,17 @@ class GeoAnalyzeRequest(AnalyzeParams):
     )
     force: bool = Field(False, description="Bypass the on-disk GEO download cache.")
 
+    @field_validator("accession")
+    @classmethod
+    def _check_accession(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _ACCESSION_RE.match(v):
+            raise ValueError(
+                f"{v!r} is not a GEO accession (expected e.g. 'GSE52778' or "
+                "'GSE271850-GPL17275')"
+            )
+        return v
+
 
 class MultiAnalyzeRequest(AnalyzeParams):
     """Body for ``POST /analyze/combine`` and ``POST /analyze/compare``.
@@ -129,6 +198,19 @@ class MultiAnalyzeRequest(AnalyzeParams):
         examples=[["GSE52778", "GSE147507"]],
     )
     force: bool = Field(False, description="Bypass the on-disk GEO download cache.")
+
+    @field_validator("accessions")
+    @classmethod
+    def _check_accessions(cls, v):
+        cleaned = []
+        for a in v:
+            a2 = a.strip().upper()
+            if not _ACCESSION_RE.match(a2):
+                raise ValueError(f"{a!r} is not a GEO accession (expected e.g. 'GSE52778')")
+            cleaned.append(a2)
+        if len(set(cleaned)) < 2:
+            raise ValueError("provide at least two distinct accessions")
+        return cleaned
 
 
 class JobSummary(BaseModel):

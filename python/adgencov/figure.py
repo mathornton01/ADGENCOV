@@ -334,7 +334,7 @@ def render_network(
 
     # ---- titles ------------------------------------------------------------
     method = payload.get("recommended", "AD")
-    nice = {"ad_target_ridge": "AD-Ridge", "ad_target_lw": "AD-Ledoit-Wolf",
+    nice = {"ad_target_ridge": "AD-Ridge", "ad_target_optimal": "AD-Optimal", "ad_target_lw": "AD-Ledoit-Wolf",
             "ad_target_oas": "AD-OAS", "ad_ridge": "AD-Ridge (hard projection)",
             "ad_linear_lw": "AD-Ledoit-Wolf (hard projection)",
             "ad_oas": "AD-OAS (hard projection)", "oas": "OAS", "lw": "Ledoit-Wolf",

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # ``ad_target_*`` family.  The ``ad_*`` family is the lam=1 hard-projection
 # special case and is labelled as such rather than as plain "AD-x".
 METHOD_LABELS: Dict[str, str] = {
+    "ad_target_optimal": "AD optimal shrinkage (Eq. 20)",
     "ad_target_ridge": "AD-Ridge (Eq. 2)",
     "ad_target_lw": "AD-Ledoit--Wolf (Eq. 2)",
     "ad_target_oas": "AD-OAS (Eq. 2)",

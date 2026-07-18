@@ -153,9 +153,10 @@
   function adModes() {
     if (!$("ad_on").checked) { return ["none"]; }
     var flavor = $("ad_flavor").value;
+    if (flavor === "optimal") { return ["none", "optimal"]; }
     if (flavor === "target") { return ["none", "target"]; }
     if (flavor === "projection") { return ["none", "projection"]; }
-    return ["none", "projection", "target"];
+    return ["none", "projection", "target", "optimal"];   // "all"
   }
 
   function submitGeo() {

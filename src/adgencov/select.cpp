@@ -37,7 +37,8 @@ bool is_ad(const std::string& method) {
 bool needs_data_matrix(const std::string& m) {
   return m == "lw" || m == "ledoit_wolf" || m == "oas" ||
          m == "ad_linear_lw" || m == "ad_oas" ||
-         m == "ad_target_lw" || m == "ad_target_oas";
+         m == "ad_target_lw" || m == "ad_target_oas" ||
+         m == "ad_target_optimal";
 }
 
 // Dispatch the covariance-only estimators from a raw sample covariance S and a
@@ -108,6 +109,45 @@ Eigen::MatrixXd estimate_with_projector(const Eigen::MatrixXd& X,
     const double lambda =
         (m == "ad_target_lw") ? ledoit_wolf_shrinkage(X) : oas_shrinkage(X);
     Eigen::MatrixXd C = shrink_to_target(S, project(S), lambda);
+    const double diag_alpha = param(spec, "diag_alpha", 0.0);
+    if (diag_alpha > 0.0) C = ridge(C, diag_alpha);
+    return make_pd(C);
+  }
+
+  // Symmetry-aware OPTIMAL convex shrinkage (Thornton, "Symmetry-Aware Convex
+  // Shrinkage", arXiv:2605.17111, Prop. 3.2 / Eqs. 18-20).  Unlike ad_target_lw
+  // /oas (which reuse the identity-target LW/OAS intensity), this derives the
+  // population-optimal weight alpha* = V_perp / (V_perp + D) for shrinking the
+  // sample covariance toward its group projection, from a data-driven plug-in.
+  // All quantities use the BIASED sample covariance R_hat (paper Eq. 8):
+  //   R_G     = P_G(R_hat)
+  //   V_perp  = (1/n^2) sum_k || P_G^perp(x_k x_k^T) - P_G^perp(R_hat) ||_F^2   (Eq. 18)
+  //   V_perp+D = || R_hat - R_G ||_F^2                                          (Eq. 19)
+  //   alpha*  = clip( V_perp / (V_perp+D), 0, 1 )                               (Eq. 20)
+  //   Sigma   = (1 - alpha*) R_hat + alpha* R_G                                 (Eq. 11)
+  if (m == "ad_target_optimal") {
+    const Eigen::Index n = X.rows();
+    if (n < 1) throw std::invalid_argument("ad_target_optimal: empty X");
+    const Eigen::RowVectorXd xbar = X.colwise().mean();
+    const Eigen::MatrixXd Xc = X.rowwise() - xbar;
+    const double dn = static_cast<double>(n);
+    const Eigen::MatrixXd Rhat = (Xc.transpose() * Xc) / dn;   // biased, Eq. 8
+    const Eigen::MatrixXd Rg = project(Rhat);
+    const Eigen::MatrixXd perpR = Rhat - Rg;                   // P_G^perp(R_hat)
+    const double denom = perpR.squaredNorm();                 // Eq. 19 (||.||_F^2)
+
+    double vperp = 0.0;                                        // Eq. 18
+    for (Eigen::Index k = 0; k < n; ++k) {
+      const Eigen::VectorXd xk = Xc.row(k).transpose();
+      const Eigen::MatrixXd dk = xk * xk.transpose();         // x_k x_k^T (centered)
+      const Eigen::MatrixXd perp_dk = dk - project(dk);       // P_G^perp(x_k x_k^T)
+      vperp += (perp_dk - perpR).squaredNorm();
+    }
+    vperp /= dn * dn;
+
+    double alpha = (denom > 0.0) ? (vperp / denom) : 0.0;     // Eq. 20
+    alpha = std::min(1.0, std::max(0.0, alpha));
+    Eigen::MatrixXd C = (1.0 - alpha) * Rhat + alpha * Rg;    // Eq. 11
     const double diag_alpha = param(spec, "diag_alpha", 0.0);
     if (diag_alpha > 0.0) C = ridge(C, diag_alpha);
     return make_pd(C);

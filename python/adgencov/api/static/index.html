@@ -133,11 +133,12 @@
           <label class="checkbox"><input type="checkbox" id="ad_on" checked /> Apply Algebraic Diversity (AD)</label>
           <label id="ad-flavor-field">AD variant
             <select id="ad_flavor">
-              <option value="both" selected>both (convex + hard)</option>
-              <option value="target">convex target (Eq. 2)</option>
+              <option value="optimal" selected>optimal &alpha; (Eq. 20, derived)</option>
+              <option value="target">convex target (Eq. 2, swept &lambda;)</option>
               <option value="projection">hard projection (&lambda;=1)</option>
+              <option value="all">all AD variants</option>
             </select>
-            <small class="hint">A plain (non-AD) baseline is always included for comparison.</small>
+            <small class="hint">Optimal &alpha; = Thornton Prop. 3.2. A plain (non-AD) baseline is always included for comparison.</small>
           </label>
           <label class="checkbox"><input type="checkbox" id="log_transform" checked /> log2(x+1)</label>
         </fieldset>

@@ -389,7 +389,11 @@ _FAMILY_METHODS: Dict[str, Dict[str, Optional[str]]] = {
     "oas":         {"none": "oas",         "projection": "ad_oas",         "target": "ad_target_oas"},
 }
 ESTIMATOR_FAMILIES = tuple(_FAMILY_METHODS)
-AD_MODES = ("none", "projection", "target")
+# "optimal" is the symmetry-aware optimal convex shrinkage of Thornton
+# (arXiv:2605.17111, Prop. 3.2): a single estimator, ad_target_optimal, whose
+# weight alpha* is derived from the data rather than swept or borrowed from the
+# identity-target LW/OAS intensity.  It is family-independent (see below).
+AD_MODES = ("none", "projection", "target", "optimal")
 
 
 def _param_sweep(method: str, sweep: bool) -> List[Dict[str, float]]:
@@ -434,6 +438,8 @@ def build_candidate_specs(
     seen = set()
     for fam in fams:
         for mode in modes:
+            if mode == "optimal":
+                continue  # family-independent; added once below
             method = _FAMILY_METHODS[fam].get(mode)
             if not method:
                 continue
@@ -443,6 +449,10 @@ def build_candidate_specs(
                     continue
                 seen.add(key)
                 specs.append(EstimatorSpec(method, params))
+    # The optimal-alpha estimator is a single, family-independent candidate:
+    # (1-alpha*) S + alpha* P_G(S) with alpha* derived per Prop. 3.2.
+    if "optimal" in modes:
+        specs.append(EstimatorSpec("ad_target_optimal", {}))
     if not specs:
         raise ValueError("no estimators selected (check families / ad_modes)")
     return specs
