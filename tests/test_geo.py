@@ -209,6 +209,22 @@ def test_map_probes_empty_result_raises():
 # ---------------------------------------------------------------------------
 # End-to-end: GEO series -> recommendation (the start-to-finish proof)
 # ---------------------------------------------------------------------------
+def _tie_groups(methods, loos, rel=1e-9):
+    """Partition a ranking into runs of scores that tie within *rel*.
+
+    Returns a list of sorted method groups, so two rankings compare equal when
+    they agree everywhere the scores actually separate the candidates.
+    """
+    groups, i = [], 0
+    while i < len(loos):
+        j = i + 1
+        while j < len(loos) and abs(loos[j] - loos[i]) <= rel * max(1.0, abs(loos[i])):
+            j += 1
+        groups.append(sorted(methods[i:j]))
+        i = j
+    return groups
+
+
 def test_analyze_series_reproduces_pipeline_golden():
     result = geo.analyze_series(
         FIXTURE, n_genes=6, min_mean=0.1, group="gene_family"
@@ -221,11 +237,21 @@ def test_analyze_series_reproduces_pipeline_golden():
     # The entire 24-candidate ranking matches.
     methods = [r.spec.method for r in result.ranking]
     loos = [r.loo_nll for r in result.ranking]
-    assert methods == GOLDEN_RANK_METHODS
     # Relative tolerance: NLLs span 5 -> 14517 (the AD-target family is heavily
     # over-regularized on this data and ranks last), so the C++ fast path and the
     # golden generator agree to ~1e-11 relative, not to a fixed 1e-9 absolute.
     assert loos == pytest.approx(GOLDEN_RANK_LOO, rel=1e-9, abs=1e-9)
+    # Method order is asserted per group of tied scores, not as an exact
+    # permutation.  Candidates 17-21 tie to ~1e-13 and 22-23 to ~1e-11, both
+    # inside the tolerance above; std::stable_sort then preserves the order the
+    # grid was scored in, which differs between MSVC and gcc/clang because of
+    # FMA and vectorisation.  Pinning the permutation tests the optimiser, not
+    # the numerics, and made Windows CI fail on a swap of ad_target_lw and
+    # ad_target_oas.  A genuine reordering still fails, because it would move a
+    # method across a score boundary.
+    assert _tie_groups(methods, loos) == _tie_groups(
+        GOLDEN_RANK_METHODS, GOLDEN_RANK_LOO
+    )
 
 
 def test_analyze_series_accepts_geoseries_and_serializes():
