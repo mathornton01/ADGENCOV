@@ -48,7 +48,9 @@ The project ships four ways to run the same numerical core:
 - Optional enrichment against [STRING](https://string-db.org) and gene-symbol /
   protein-id resolution via mygene.info and UniProt.
 - Every Python binding is parity-tested to ~1e-9 against the reference research
-  prototype; CI runs the full suite on Linux, macOS, and Windows.
+  prototype; CI runs the suite on Linux, macOS, and Windows. The binding parity
+  suite needs that prototype, which is not distributed here, so it skips in CI —
+  the same numerics are covered there by the committed golden headers.
 
 ## Build
 
@@ -250,7 +252,14 @@ and EBIC selection criteria on demand.
 
 The service is containerized (multi-stage `Dockerfile`, portable SIMD build) and
 deployed on Railway (`railway.json`, healthcheck at `/health`); see `DEPLOY.md`
-and `DEPLOY_NOTES.md`. Auto-deploy is wired to `main`.
+and `DEPLOY_NOTES.md` for the project/service ids and the CLI deploy recipe
+(`railway up --service adgencov-api --detach`).
+
+Pushing to `main` deploys only while the Railway service's GitHub source is
+connected to this repository and watching that branch — confirm it under
+Settings → Source rather than assuming it, since a disconnected source fails
+silently: the previous image keeps serving, so the service looks healthy while
+running stale code.
 
 ## Roadmap
 

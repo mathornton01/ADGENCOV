@@ -38,7 +38,10 @@ __pycache__/
 
 # Docs and large local data (not needed at runtime)
 docs/_build/
-data/*.local.*
+# Derived paper outputs and any cached GEO matrices: the runtime stage copies
+# only /src/python, so none of this reaches the image — keep it out of the
+# build context entirely (the raw FPKM matrices alone are ~6 MB each).
+data/
 tests/_tmp_*
 bench_speed.py
 
