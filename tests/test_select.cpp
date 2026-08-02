@@ -12,9 +12,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-// M_PI is a POSIX extension, not ISO C++; MSVC and MinGW/UCRT only declare it
-// when _USE_MATH_DEFINES is set before <cmath>.
-#define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -137,7 +134,11 @@ TEST_CASE("gaussian_nll_one on identity covariance is analytic", "[select][nll]"
   Eigen::VectorXd mu = Eigen::VectorXd::Zero(3);
   Eigen::VectorXd x(3);
   x << 1.0, 0.0, 0.0;
-  const double expected = 0.5 * (3.0 * std::log(2.0 * M_PI) + 0.0 + 1.0);
+  // pi as a literal rather than M_PI: the latter is a POSIX extension that MSVC
+  // and MinGW/UCRT only declare when _USE_MATH_DEFINES is set before <cmath>,
+  // which a test TU cannot guarantee once Catch2's headers are in the mix.
+  constexpr double kPi = 3.14159265358979323846;
+  const double expected = 0.5 * (3.0 * std::log(2.0 * kPi) + 0.0 + 1.0);
   REQUIRE_THAT(gaussian_nll_one(x, mu, I), WithinAbs(expected, 1e-12));
 }
 
