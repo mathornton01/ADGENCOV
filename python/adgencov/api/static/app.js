@@ -96,7 +96,11 @@
     el.textContent = msg || "";
     el.className = "status" + (cls ? " " + cls : "");
   }
-  function busy(on) { $("run-btn").disabled = on; }
+  // Re-enabling after a run must not override a constraint block, so hand back
+  // to syncConstraints rather than unconditionally enabling the button.
+  function busy(on) {
+    if (on) { $("run-btn").disabled = true; } else { syncConstraints(); }
+  }
 
   // -- progress bar --------------------------------------------------------
   var _progressStart = 0;
@@ -121,6 +125,196 @@
     if (pct) { pct.textContent = pctVal + "%"; }
   }
 
+  // -- option compatibility -------------------------------------------------
+  // Mirrors adgencov._FAMILY_METHODS: which AD variants each estimator family
+  // actually implements. "optimal" is family-independent so it is always
+  // available; "target" (the Eq. 2 convex symmetry target) exists only for the
+  // three families whose shrinkage composes with an arbitrary target matrix.
+  var AD_SUPPORT = {
+    all:         { projection: true, target: true },
+    sample:      { projection: true, target: false },
+    ridge:       { projection: true, target: true },
+    lasso:       { projection: true, target: false },
+    elastic_net: { projection: true, target: false },
+    ledoit_wolf: { projection: true, target: true },
+    oas:         { projection: true, target: true }
+  };
+  // Families with no scalar hyper-parameter: the sweep toggle cannot change
+  // their candidate grid, so offering it is meaningless.
+  var NO_HYPERPARAMS = { sample: 1, ledoit_wolf: 1, oas: 1 };
+  // Groupings that need an external gene->group table, and the column it must
+  // carry. Mirrors adgencov.groupmap.GROUPS_NEEDING_TABLE.
+  var GROUP_TABLE_COLUMN = {
+    chromosome: "chromosome",
+    reactome: "group",
+    go_process: "group",
+    hierarchical_wreath: "group",
+    custom_group_map: "group"
+  };
+  // Groupings whose partition is produced by clustering, so n_blocks applies.
+  var USES_BLOCKS = { correlation_blocks: 1, hierarchical_wreath: 1 };
+
+  var GROUP_BLURB = {
+    auto: "Runs the recommender under no grouping, gene family, and correlation blocks at 2/4/8, then keeps whichever scored best.",
+    gene_family: "Groups genes sharing a symbol prefix (COL1A1/COL1A2 → COL, all SNORDs together). Needs no annotation and is often the strongest simple prior.",
+    correlation_blocks: "Clusters genes by correlation distance. Data-driven rather than biological, so it can impose boundaries the biology does not support.",
+    none: "No symmetry: every gene is its own group and the AD projection is the identity. Use as a baseline.",
+    chromosome: "Groups genes by chromosome or cytoband. Needs a table with columns gene,chromosome.",
+    reactome: "Groups genes by Reactome pathway membership. Needs a table with columns gene,group.",
+    go_process: "Groups genes by GO biological process. Needs a table with columns gene,group.",
+    hierarchical_wreath: "Coarse groups subdivided into co-expression modules (a wreath product). Needs a table with columns gene,group.",
+    custom_group_map: "Any partition you supply. Needs a table with columns gene,group."
+  };
+  var AD_FLAVOR_BLURB = {
+    optimal: "Computes the shrinkage weight α* directly from the data (Thornton, Prop. 3.2). One candidate, no sweep — but a swept λ sometimes beats it.",
+    target: "Blends the raw and projected covariance, sweeping λ over a grid. Usually the strongest variant, at the cost of more candidates to score.",
+    projection: "Sets λ=1, replacing the covariance with its group-projected form. The strongest possible prior; good when you trust the grouping.",
+    all: "Scores every AD variant. Slowest, but shows which form of the prior suits your data."
+  };
+  var CRITERION_BLURB = {
+    loo: "Refits the estimator once per sample. Exact, and the criterion used in the paper, but cost scales with sample count.",
+    kfold: "Refits 10 times instead of n. Much faster on large series; the recommendation is usually unchanged.",
+    ebic: "Scores each candidate in a single pass with a complexity penalty. Fastest by far — use it to explore, then confirm with leave-one-out."
+  };
+  var ESTIMATOR_BLURB = {
+    all: "Scores every family and recommends the winner. The best default — the ranking is itself informative.",
+    ridge: "Shrinks toward a scaled identity by a fixed amount. The only family with both a swept λ and a swept α.",
+    ledoit_wolf: "Picks the identity-shrinkage weight analytically. No hyperparameters to sweep.",
+    oas: "Like Ledoit-Wolf but tuned for small samples. No hyperparameters to sweep.",
+    lasso: "Soft-thresholds off-diagonal entries toward zero. Note that sparsity in expression does not imply a sparse covariance.",
+    elastic_net: "LASSO plus a ridge term on the diagonal.",
+    sample: "No shrinkage at all. Singular whenever p ≥ n — included as a floor, not a recommendation."
+  };
+
+  // Group-map file contents, read client-side and posted as inline text.
+  var GROUP_MAP_TEXT = null;
+  var GROUP_MAP_NAME = "";
+
+  function currentGroup() { return $("group").value; }
+  function groupNeedsTable(g) { return !!GROUP_TABLE_COLUMN[g]; }
+
+  /** Recompute every dependent control. Called on any parameter change. */
+  function syncConstraints() {
+    var group = currentGroup();
+    var fam = $("estimator").value;
+    var adOn = $("ad_on").checked;
+    var flavor = $("ad_flavor").value;
+    var criterion = $("criterion").value;
+    var blockers = [];
+
+    // --- grouping -> help text, blocks field, group-map upload -------------
+    $("group-hint").textContent = GROUP_BLURB[group] || "";
+    toggle($("n-blocks-field"), !USES_BLOCKS[group]);
+    var needsTable = groupNeedsTable(group);
+    toggle($("group-map-field"), !needsTable);
+    if (needsTable) {
+      var col = GROUP_TABLE_COLUMN[group];
+      $("group-map-hint").textContent =
+        "Two columns, header row required: gene," + col + ". Tab- or comma-separated.";
+      var st = $("group-map-status");
+      if (GROUP_MAP_TEXT) {
+        st.textContent = "Loaded " + GROUP_MAP_NAME + ".";
+        st.className = "constraint ok";
+      } else {
+        st.textContent = "Required for this grouping — choose a file to continue.";
+        st.className = "constraint";
+        blockers.push("the “" + labelOf($("group")) + "” grouping needs a gene→group table");
+      }
+    }
+    // n_blocks can't exceed n_genes (the server rejects it with a 422).
+    if (USES_BLOCKS[group]) {
+      var nb = parseInt($("n_blocks").value, 10);
+      var ng = parseInt($("n_genes").value, 10);
+      if (nb > 0 && ng > 0 && nb > ng) {
+        blockers.push("blocks (" + nb + ") cannot exceed top genes (" + ng + ")");
+      }
+    }
+
+    // --- AD on/off ---------------------------------------------------------
+    toggle($("ad-flavor-field"), !adOn);
+    if (adOn) {
+      $("ad-flavor-hint").textContent = AD_FLAVOR_BLURB[flavor] || "";
+      // Disable AD variants the chosen estimator family has no implementation
+      // for, rather than letting the run silently contain no AD candidate.
+      var support = AD_SUPPORT[fam] || AD_SUPPORT.all;
+      var sel = $("ad_flavor");
+      var lost = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        var o = sel.options[i];
+        var bad = (o.value === "target" && !support.target) ||
+                  (o.value === "projection" && !support.projection);
+        o.disabled = bad;
+        if (bad) { lost.push(o.value); }
+      }
+      var note = $("ad-flavor-constraint");
+      if (lost.length) {
+        note.textContent = "The convex target has no " + labelOf($("estimator")) +
+          " variant — it exists only for Ridge, Ledoit-Wolf and OAS.";
+        note.classList.remove("hidden");
+      } else {
+        note.classList.add("hidden");
+      }
+      if (sel.selectedOptions.length && sel.selectedOptions[0].disabled) {
+        blockers.push("the “" + labelOf(sel) + "” AD variant is not available for " +
+                      labelOf($("estimator")));
+      }
+    } else {
+      $("ad-flavor-constraint").classList.add("hidden");
+    }
+
+    // --- sweep -------------------------------------------------------------
+    var sweepNoop = !!NO_HYPERPARAMS[fam];
+    $("sweep").disabled = sweepNoop;
+    $("sweep-hint").textContent = sweepNoop
+      ? ""
+      : "Scores several values of the estimator's tuning parameter instead of one.";
+    var sc = $("sweep-constraint");
+    if (sweepNoop) {
+      sc.textContent = labelOf($("estimator")) +
+        " has no tuning parameter, so the sweep has no effect.";
+      sc.classList.remove("hidden");
+    } else {
+      sc.classList.add("hidden");
+    }
+
+    // --- criterion ---------------------------------------------------------
+    $("criterion-hint").textContent = CRITERION_BLURB[criterion] || "";
+    toggle($("ebic-gamma-field"), criterion !== "ebic");
+    $("estimator-hint").textContent = ESTIMATOR_BLURB[fam] || "";
+
+    // --- runtime estimate, which depends on the criterion ------------------
+    $("n-genes-hint").textContent = runtimeHint(parseInt($("n_genes").value, 10), criterion);
+
+    // --- gate submission ---------------------------------------------------
+    var fc = $("form-constraint");
+    if (blockers.length) {
+      fc.textContent = "Cannot run: " + blockers.join("; ") + ".";
+      fc.classList.remove("hidden");
+      $("run-btn").disabled = true;
+    } else {
+      fc.classList.add("hidden");
+      $("run-btn").disabled = false;
+    }
+  }
+
+  function toggle(el, hidden) { if (el) { el.classList.toggle("hidden", !!hidden); } }
+  function labelOf(sel) {
+    var o = sel.selectedOptions && sel.selectedOptions[0];
+    return o ? o.textContent.split("—")[0].trim() : sel.value;
+  }
+  /** Rough wall-clock guidance: leave-one-out refits n times, the others don't. */
+  function runtimeHint(n, criterion) {
+    if (!n || n < 2) { return ""; }
+    if (criterion === "loo") {
+      return n <= 150 ? "Leave-one-out at " + n + " genes: roughly 1–2 minutes."
+           : n <= 300 ? "Leave-one-out at " + n + " genes: several minutes."
+           : "Leave-one-out at " + n + " genes: 40+ minutes. Consider k-fold or EBIC.";
+    }
+    var label = criterion === "ebic" ? "Extended BIC" : "k-fold";
+    return n <= 300 ? label + " at " + n + " genes: seconds to a minute."
+         : label + " at " + n + " genes: a few minutes.";
+  }
+
   // -- request assembly ----------------------------------------------------
   function commonParams() {
     // The selection criterion picks how the estimator grid is ranked, entirely
@@ -133,6 +327,7 @@
       log_transform: $("log_transform").checked,
       group: $("group").value,
       n_blocks: parseInt($("n_blocks").value, 10),
+      group_map: groupNeedsTable($("group").value) ? GROUP_MAP_TEXT : null,
       top_fraction: parseFloat($("top_fraction").value),
       criterion: criterion,
       ebic_gamma: parseFloat($("ebic_gamma").value),
@@ -182,6 +377,7 @@
     fd.append("log_transform", p.log_transform);
     fd.append("group", p.group);
     fd.append("n_blocks", p.n_blocks);
+    if (p.group_map) { fd.append("group_map", p.group_map); }
     fd.append("top_fraction", p.top_fraction);
     fd.append("criterion", p.criterion);
     fd.append("ebic_gamma", p.ebic_gamma);
@@ -1576,18 +1772,47 @@
     var coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
     setMode((canRender3D() && !coarsePointer) ? "3d" : "2d");
     initHeatmapZoom();
-    // Reveal the EBIC penalty field only when the EBIC criterion is selected.
-    function syncCriterion() {
-      $("ebic-gamma-field").classList.toggle("hidden", $("criterion").value !== "ebic");
-    }
-    $("criterion").addEventListener("change", syncCriterion);
-    syncCriterion();
-    // AD flavor only matters when AD is applied.
-    function syncAd() {
-      $("ad-flavor-field").classList.toggle("hidden", !$("ad_on").checked);
-    }
-    $("ad_on").addEventListener("change", syncAd);
-    syncAd();
+    // Every control that can invalidate another one re-runs the constraint pass,
+    // so an impossible combination is never submittable.
+    ["group", "estimator", "ad_on", "ad_flavor", "criterion", "n_blocks", "n_genes"]
+      .forEach(function (id) {
+        var el = $(id);
+        if (!el) { return; }
+        el.addEventListener("change", syncConstraints);
+        if (el.tagName === "INPUT" && el.type === "number") {
+          el.addEventListener("input", syncConstraints);
+        }
+      });
+    // Read the group-map file client-side; it is posted as inline text so the
+    // JSON (GEO) and multipart (upload) paths can share one field.
+    $("group_map_file").addEventListener("change", function () {
+      var f = this.files && this.files[0];
+      if (!f) { GROUP_MAP_TEXT = null; GROUP_MAP_NAME = ""; syncConstraints(); return; }
+      var st = $("group-map-status");
+      st.textContent = "Reading " + f.name + "…";
+      st.className = "constraint";
+      f.text().then(function (txt) {
+        GROUP_MAP_TEXT = txt;
+        GROUP_MAP_NAME = f.name;
+        syncConstraints();
+      }).catch(function (err) {
+        GROUP_MAP_TEXT = null; GROUP_MAP_NAME = "";
+        st.textContent = "Could not read that file: " + err.message;
+        st.className = "constraint";
+        syncConstraints();
+      });
+    });
+    // Expandable per-section help.
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".help-toggle"), function (btn) {
+        btn.addEventListener("click", function () {
+          var panel = $(btn.getAttribute("data-help"));
+          if (!panel) { return; }
+          var nowHidden = panel.classList.toggle("hidden");
+          btn.setAttribute("aria-expanded", nowHidden ? "false" : "true");
+        });
+      });
+    syncConstraints();
     // Explain the active multi-dataset mode.
     function syncMultiMode() {
       var h = $("multi-mode-hint");

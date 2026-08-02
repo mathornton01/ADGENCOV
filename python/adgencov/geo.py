@@ -1509,6 +1509,7 @@ def analyze_series(
     log_transform: bool = True,
     group: str = "gene_family",
     n_blocks: int = 4,
+    group_map: Optional[str] = None,
     top_fraction: float = 0.01,
     cache_dir: Optional[str] = None,
     force: bool = False,
@@ -1558,7 +1559,10 @@ def analyze_series(
         )
 
     report(0.18, "Building gene blocks")
-    labels = build_group_labels(dataset, group, n_blocks=n_blocks)
+    from .groupmap import build_kwargs
+
+    labels = build_group_labels(dataset, group, n_blocks=n_blocks,
+                                **build_kwargs(group, group_map))
     codes = factorize(labels)
     X = np.asarray(dataset.X, dtype=float)
 

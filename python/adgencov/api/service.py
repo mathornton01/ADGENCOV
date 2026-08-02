@@ -36,6 +36,7 @@ from .._core import (
     preprocess,
 )
 from .models import GeoAnalyzeRequest, MultiAnalyzeRequest, UploadParams
+from ..groupmap import build_kwargs
 from ..pipeline import choose_group, grouping_meta
 
 
@@ -96,7 +97,8 @@ def run_upload_analysis(
     )
 
     def run_one(group, n_blocks, prog):
-        labels = build_group_labels(dataset, group, n_blocks=n_blocks)
+        labels = build_group_labels(dataset, group, n_blocks=n_blocks,
+                                    **build_kwargs(group, params.group_map))
         codes = factorize(labels)
         return analyze(X, codes, genes=genes, progress=prog, **sel)
 
@@ -133,7 +135,7 @@ def run_geo_analysis(
         n_genes=req.n_genes, min_mean=req.min_mean, log_transform=req.log_transform,
         top_fraction=req.top_fraction, cv_folds=req.cv_folds, criterion=req.criterion,
         ebic_gamma=req.ebic_gamma, families=req.families, ad_modes=req.ad_modes,
-        sweep=req.sweep,
+        sweep=req.sweep, group_map=req.group_map,
     )
 
     if req.group == "auto":

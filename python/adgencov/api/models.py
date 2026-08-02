@@ -18,9 +18,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # adgencov._core.build_group_labels accepts (plus "auto").
 _VALID_GROUPS = frozenset({
     "none", "gene_family", "chromosome", "reactome", "go_process",
-    "correlation_blocks", "hierarchical_wreath", "custom", "custom_group_map",
+    "correlation_blocks", "hierarchical_wreath", "custom_group_map",
     "auto",
 })
+# "custom" was accepted here but is not a name the core knows, so it reached
+# build_group_labels and died with "unknown group: custom". Treat it as the
+# alias it was always meant to be.
+_GROUP_ALIASES = {"custom": "custom_group_map"}
 _VALID_FAMILIES = frozenset({
     "sample", "ridge", "lasso", "elastic_net", "ledoit_wolf", "oas",
 })
@@ -47,6 +51,16 @@ class AnalyzeParams(BaseModel):
         ),
     )
     n_blocks: int = Field(4, ge=1, description="Number of blocks for correlation_blocks / wreath.")
+    group_map: Optional[str] = Field(
+        None,
+        description=(
+            "Two-column gene→group table, as inline text (TSV/CSV; the delimiter "
+            "is sniffed). Required by the groupings that are not derivable from "
+            "the expression matrix alone: chromosome (columns gene,chromosome) "
+            "and reactome / go_process / custom_group_map / hierarchical_wreath "
+            "(columns gene,group). Ignored by the other groupings."
+        ),
+    )
     families: Optional[List[str]] = Field(
         None,
         description=(
@@ -104,6 +118,7 @@ class AnalyzeParams(BaseModel):
     @field_validator("group")
     @classmethod
     def _check_group(cls, v: str) -> str:
+        v = _GROUP_ALIASES.get(v, v)
         if v not in _VALID_GROUPS:
             raise ValueError(f"group must be one of {sorted(_VALID_GROUPS)}, got {v!r}")
         return v
@@ -141,6 +156,59 @@ class AnalyzeParams(BaseModel):
                 and self.n_blocks > self.n_genes:
             raise ValueError(
                 f"n_blocks ({self.n_blocks}) cannot exceed n_genes ({self.n_genes})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_group_map_present(self):
+        """Reject map-requiring groupings up front rather than mid-analysis.
+
+        Also parses the supplied table so a missing or misnamed column is a 422
+        on submit rather than a job that fails a minute later.
+        """
+        from ..groupmap import needs_table, parse_table, required_column
+
+        if not needs_table(self.group):
+            return self
+        text = (self.group_map or "").strip()
+        if not text:
+            raise ValueError(
+                f"grouping {self.group!r} needs a group_map: a two-column table "
+                f"with columns gene,{required_column(self.group)}. Supply one, or "
+                "choose a grouping derivable from the matrix alone "
+                "(gene_family, correlation_blocks, none, auto)."
+            )
+        parse_table(self.group_map, self.group)   # raises ValueError -> 422
+        return self
+
+    @model_validator(mode="after")
+    def _check_ad_modes_vs_families(self):
+        """Reject estimator/AD-variant pairs that would yield no AD candidate.
+
+        ``target`` (the Eq. 2 convex symmetry target) exists only for ridge,
+        Ledoit-Wolf and OAS.  Asking for it alongside only sample/lasso/
+        elastic_net previously produced a run containing no AD estimator at all,
+        silently — the user got ordinary shrinkage and no indication why.
+        """
+        from .. import _FAMILY_METHODS
+
+        modes = self.ad_modes
+        fams = self.families
+        if not modes or fams is None:
+            return self
+        real = [m for m in modes if m != "none"]
+        if not real or "optimal" in real:
+            # "optimal" is family-independent, so it always contributes.
+            return self
+        ok = [f for f in fams
+              if any(_FAMILY_METHODS.get(f, {}).get(m) for m in real)]
+        if not ok:
+            raise ValueError(
+                f"AD variant(s) {real} have no implementation for estimator "
+                f"famil{'y' if len(fams) == 1 else 'ies'} {fams}. The Eq. 2 "
+                "convex target exists only for ridge, ledoit_wolf and oas; use "
+                "the hard projection, the optimal weight, or a different "
+                "estimator."
             )
         return self
 

@@ -10,9 +10,10 @@ prove three things:
    LOO ``5.431879976737194``) when handed the series-matrix fixture — so
    ingestion → recommender is faithful through the web boundary too.
 
-Everything runs fully offline: the "accession" for the GEO test is the local
-series-matrix fixture path, which :func:`adgencov.geo.load_series` parses
-without touching the network.
+Everything runs fully offline: the GEO test drives the local series-matrix
+fixture through :func:`adgencov.geo.analyze_series`, which parses it without
+touching the network.  The HTTP endpoint itself refuses a filesystem path as an
+accession, and a regression test pins that shut.
 """
 from __future__ import annotations
 
@@ -148,32 +149,37 @@ def test_upload_invalid_params_rejected(client):
 
 
 # ---------------------------------------------------------------------------
-# GEO path (offline: the "accession" is the local series-matrix fixture)
+# GEO path (offline: driven from the local series-matrix fixture)
 # ---------------------------------------------------------------------------
-def test_geo_flow_reproduces_golden(client):
-    r = client.post(
-        "/analyze/geo",
-        json={
-            "accession": GEO_FIXTURE,
-            "n_genes": 6,
-            "min_mean": 0.1,
-            "group": "gene_family",
-        },
-    )
-    assert r.status_code == 202, r.text
-    summary = r.json()
-    assert summary["kind"] == "geo"
-    assert summary["label"] == GEO_FIXTURE
+def test_geo_flow_reproduces_golden():
+    """The GEO ingestion → recommender path reproduces the 1e-9 pipeline golden.
 
-    detail = _wait(client, summary["id"])
-    assert detail["state"] == "succeeded", detail.get("error")
-    result = detail["result"]
+    This exercises :func:`adgencov.geo.analyze_series` directly rather than over
+    HTTP.  The endpoint deliberately refuses a filesystem path as an accession
+    (see ``test_geo_rejects_filesystem_path``), so the local fixture cannot be
+    pushed through the web boundary — nor should it be able to be.
+    """
+    geo = pytest.importorskip("adgencov.geo")
+    result = geo.analyze_series(
+        GEO_FIXTURE, n_genes=6, min_mean=0.1, group="gene_family"
+    ).to_dict()
 
     assert result["recommended"] == GOLDEN_GEO_METHOD
     assert result["ranking"][0]["loo_nll"] == pytest.approx(GOLDEN_GEO_LOO, abs=1e-9)
     assert len(result["ranking"]) == 24
     assert result["edges"], "expected at least one covariance edge"
-    assert result["source"]["kind"] == "geo"
+
+
+def test_geo_rejects_filesystem_path(client):
+    """A path must never be accepted as an accession over HTTP.
+
+    Before the accession pattern was enforced, POSTing a local path here made
+    the service read that file off the server's disk — an arbitrary-file-read
+    vector on any deployed instance.  Keep it closed.
+    """
+    for probe in (GEO_FIXTURE, "/etc/passwd", "../../etc/passwd", "file:///etc/passwd"):
+        r = client.post("/analyze/geo", json={"accession": probe, "n_genes": 6})
+        assert r.status_code == 422, f"{probe!r} was not rejected: {r.text}"
 
 
 def test_geo_missing_accession_rejected(client):

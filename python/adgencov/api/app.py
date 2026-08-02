@@ -177,6 +177,7 @@ def create_app(
         log_transform: bool = Form(True),
         group: str = Form("gene_family"),
         n_blocks: int = Form(4),
+        group_map: Optional[str] = Form(None),  # inline gene->group table text
         top_fraction: float = Form(0.01),
         sample_regex: str = Form(".*"),
         gene_col: str = Form("gene_short_name"),
@@ -212,6 +213,7 @@ def create_app(
                 log_transform=log_transform,
                 group=group,
                 n_blocks=n_blocks,
+                group_map=group_map,
                 top_fraction=top_fraction,
                 sample_regex=sample_regex,
                 gene_col=gene_col,

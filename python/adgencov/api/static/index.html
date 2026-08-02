@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ADGENCOV — Genetic Covariance Explorer</title>
   <meta name="description" content="Algebraic-Diversity Genetic Covariance estimation for transcriptomics: upload a matrix or point at a GEO accession and explore the recommended covariance structure." />
-  <link rel="stylesheet" href="/styles.css?v=3d1" />
+  <link rel="stylesheet" href="/styles.css?v=4a1" />
 </head>
 <body>
   <header class="topbar">
@@ -74,73 +74,128 @@
 
         <fieldset class="params">
           <legend>Parameters</legend>
-          <label>Top genes
-            <input type="number" id="n_genes" value="150" min="2" step="1" />
-            <small class="hint">Recommender cost grows ~cubically: 150 ≈ 1&ndash;2 min, 500 ≈ 40+ min.</small>
-          </label>
-          <label>Min mean expr
-            <input type="number" id="min_mean" value="0.1" min="0" step="0.05" />
-          </label>
-          <label>AD symmetry grouping
-            <select id="group">
-              <option value="auto">auto (try several, pick best)</option>
-              <option value="gene_family" selected>gene_family</option>
-              <option value="chromosome">chromosome</option>
-              <option value="reactome">reactome</option>
-              <option value="go_process">go_process</option>
-              <option value="correlation_blocks">correlation_blocks</option>
-              <option value="hierarchical_wreath">hierarchical_wreath</option>
-              <option value="custom">custom</option>
-            </select>
-            <small class="hint">The gene partition Algebraic Diversity projects onto.</small>
-          </label>
-          <label>Blocks
-            <input type="number" id="n_blocks" value="4" min="1" step="1" />
-          </label>
-          <label>Edge fraction
-            <input type="number" id="top_fraction" value="0.01" min="0.0001" max="1" step="any" />
-          </label>
-          <label>Selection criterion
-            <select id="criterion">
-              <option value="loo">leave-one-out (exact, slowest)</option>
-              <option value="kfold" selected>k-fold CV (fast)</option>
-              <option value="ebic">Extended BIC (fastest, penalized)</option>
-            </select>
-            <small class="hint">How the estimator grid is ranked. Runs server-side per dataset.</small>
-          </label>
-          <label id="ebic-gamma-field" class="hidden">EBIC &gamma;
-            <input type="number" id="ebic_gamma" value="0.5" min="0" max="1" step="0.05" />
-            <small class="hint">Penalty strength (0 = plain BIC; higher is stricter for p &gt; n).</small>
-          </label>
-          <label>Estimator
-            <select id="estimator">
-              <option value="all">all estimators (recommend best)</option>
-              <option value="ridge">Ridge</option>
-              <option value="lasso">LASSO</option>
-              <option value="elastic_net">Elastic-Net</option>
-              <option value="ledoit_wolf">Ledoit-Wolf</option>
-              <option value="oas">OAS</option>
-              <option value="sample">sample covariance</option>
-            </select>
-            <small class="hint">Run one shrinkage estimator, or all and pick the best.</small>
-          </label>
-          <label id="sweep-field">Hyperparameter sweep
-            <select id="sweep">
-              <option value="true" selected>sweep (try a grid)</option>
-              <option value="false">single default value</option>
-            </select>
-          </label>
-          <label class="checkbox"><input type="checkbox" id="ad_on" checked /> Apply Algebraic Diversity (AD)</label>
-          <label id="ad-flavor-field">AD variant
-            <select id="ad_flavor">
-              <option value="optimal" selected>optimal &alpha; (Eq. 20, derived)</option>
-              <option value="target">convex target (Eq. 2, swept &lambda;)</option>
-              <option value="projection">hard projection (&lambda;=1)</option>
-              <option value="all">all AD variants</option>
-            </select>
-            <small class="hint">Optimal &alpha; = Thornton Prop. 3.2. A plain (non-AD) baseline is always included for comparison.</small>
-          </label>
-          <label class="checkbox"><input type="checkbox" id="log_transform" checked /> log2(x+1)</label>
+
+          <!-- ---- 1. preprocessing ---- -->
+          <div class="pgroup">
+            <h3>1 &middot; Preprocessing
+              <button type="button" class="help-toggle" data-help="help-pre" aria-expanded="false" aria-label="About preprocessing">?</button>
+            </h3>
+            <p class="help hidden" id="help-pre">Turns the raw matrix into an analysis-ready one: duplicate gene symbols are collapsed by highest mean expression, low-abundance genes are dropped, values are optionally log-transformed, the most variable genes are kept, and each gene is standardized to mean&nbsp;0 / variance&nbsp;1.</p>
+
+            <label>Top genes
+              <input type="number" id="n_genes" value="150" min="2" step="1" />
+              <small class="hint" id="n-genes-hint"></small>
+            </label>
+            <label>Min mean expression
+              <input type="number" id="min_mean" value="0.1" min="0" step="0.05" />
+              <small class="hint">Genes whose mean falls below this are dropped before ranking by variance.</small>
+            </label>
+            <label class="checkbox"><input type="checkbox" id="log_transform" checked /> log2(x+1) transform
+              <small class="hint">Leave on for counts, FPKM or TPM. Turn off if your matrix is already on a log scale.</small>
+            </label>
+          </div>
+
+          <!-- ---- 2. symmetry ---- -->
+          <div class="pgroup">
+            <h3>2 &middot; Symmetry (Algebraic Diversity)
+              <button type="button" class="help-toggle" data-help="help-ad" aria-expanded="false" aria-label="About Algebraic Diversity">?</button>
+            </h3>
+            <p class="help hidden" id="help-ad">AD assumes genes in the same biological group are approximately exchangeable, and pulls the covariance toward the structure that assumption implies. A plain non-AD baseline is <em>always</em> scored alongside, so the ranking shows whether the symmetry actually helped &mdash; if it did not, an ordinary estimator wins and that is a real result, not a failure.</p>
+
+            <label class="checkbox"><input type="checkbox" id="ad_on" checked /> Apply Algebraic Diversity</label>
+
+            <label>Gene grouping
+              <select id="group">
+                <optgroup label="Derived from your matrix &mdash; no extra file">
+                  <option value="auto">auto &mdash; try several, keep the best</option>
+                  <option value="gene_family" selected>gene family (from symbol prefixes)</option>
+                  <option value="correlation_blocks">correlation blocks (data-driven)</option>
+                  <option value="none">none &mdash; every gene its own group</option>
+                </optgroup>
+                <optgroup label="Need a gene&rarr;group table (upload below)">
+                  <option value="chromosome">chromosome / cytoband</option>
+                  <option value="reactome">Reactome pathways</option>
+                  <option value="go_process">GO biological process</option>
+                  <option value="hierarchical_wreath">hierarchical wreath (pathway &times; module)</option>
+                  <option value="custom_group_map">custom group map</option>
+                </optgroup>
+              </select>
+              <small class="hint" id="group-hint"></small>
+            </label>
+
+            <label id="group-map-field" class="wide hidden">Gene&rarr;group table
+              <input type="file" id="group_map_file" accept=".tsv,.csv,.txt,.map" />
+              <small class="hint" id="group-map-hint"></small>
+              <span class="constraint" id="group-map-status"></span>
+            </label>
+
+            <label id="n-blocks-field">Number of blocks
+              <input type="number" id="n_blocks" value="4" min="1" step="1" />
+              <small class="hint">How many clusters the data-driven partition is cut into. Fewer, larger blocks impose a stronger prior.</small>
+            </label>
+
+            <label id="ad-flavor-field">AD variant
+              <select id="ad_flavor">
+                <option value="optimal" selected>optimal &alpha; &mdash; weight derived from the data</option>
+                <option value="target">convex target &mdash; sweep the weight &lambda;</option>
+                <option value="projection">hard projection &mdash; trust the group fully</option>
+                <option value="all">all AD variants</option>
+              </select>
+              <small class="hint" id="ad-flavor-hint"></small>
+              <span class="constraint hidden" id="ad-flavor-constraint"></span>
+            </label>
+          </div>
+
+          <!-- ---- 3. estimator + selection ---- -->
+          <div class="pgroup">
+            <h3>3 &middot; Estimator &amp; selection
+              <button type="button" class="help-toggle" data-help="help-est" aria-expanded="false" aria-label="About estimator selection">?</button>
+            </h3>
+            <p class="help hidden" id="help-est">The service scores a grid of candidate estimators and recommends the one with the best cross-validated likelihood. Restricting the estimator or turning off the sweep makes the run faster but gives the recommender less to choose from.</p>
+
+            <label>Estimator
+              <select id="estimator">
+                <option value="all">all estimators &mdash; recommend the best</option>
+                <option value="ridge">Ridge &mdash; shrink toward a scaled identity</option>
+                <option value="ledoit_wolf">Ledoit-Wolf &mdash; optimal identity shrinkage</option>
+                <option value="oas">OAS &mdash; oracle-approximating shrinkage</option>
+                <option value="lasso">LASSO &mdash; sparsify off-diagonals</option>
+                <option value="elastic_net">Elastic-Net &mdash; sparsity + ridge</option>
+                <option value="sample">sample covariance &mdash; no shrinkage</option>
+              </select>
+              <small class="hint" id="estimator-hint"></small>
+            </label>
+
+            <label id="sweep-field">Hyperparameter sweep
+              <select id="sweep">
+                <option value="true" selected>sweep a grid of values</option>
+                <option value="false">single default value</option>
+              </select>
+              <small class="hint" id="sweep-hint"></small>
+              <span class="constraint hidden" id="sweep-constraint"></span>
+            </label>
+
+            <label>Selection criterion
+              <select id="criterion">
+                <option value="loo">leave-one-out &mdash; exact, slowest</option>
+                <option value="kfold" selected>k-fold CV &mdash; fast</option>
+                <option value="ebic">Extended BIC &mdash; fastest, penalized</option>
+              </select>
+              <small class="hint" id="criterion-hint"></small>
+            </label>
+
+            <label id="ebic-gamma-field" class="hidden">EBIC &gamma;
+              <input type="number" id="ebic_gamma" value="0.5" min="0" max="1" step="0.05" />
+              <small class="hint">Penalty strength (0 = plain BIC; higher is stricter when p &gt; n).</small>
+            </label>
+
+            <label>Edge fraction
+              <input type="number" id="top_fraction" value="0.01" min="0.0001" max="1" step="any" />
+              <small class="hint">Share of gene pairs kept as network edges. 0.01 keeps the strongest 1%.</small>
+            </label>
+          </div>
+
+          <p class="constraint hidden" id="form-constraint" role="status" aria-live="polite"></p>
         </fieldset>
 
         <button type="submit" id="run-btn" class="run">Run analysis</button>
@@ -253,6 +308,6 @@
   </footer>
 
   <script src="/vendor/3d-force-graph.min.js?v=1"></script>
-  <script src="/app.js?v=3d2"></script>
+  <script src="/app.js?v=4a1"></script>
 </body>
 </html>
