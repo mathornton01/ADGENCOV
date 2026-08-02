@@ -19,4 +19,16 @@ set(ADGENCOV_PY_PKG_DIR ${CMAKE_SOURCE_DIR}/python/adgencov)
 set_target_properties(adgencov_core PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ${ADGENCOV_PY_PKG_DIR})
 
+# Multi-config generators (Visual Studio) append the configuration name to the
+# output directory, landing the module at python/adgencov/Release/_core.pyd
+# where `from . import _core` cannot find it — Python then reports the confusing
+# "partially initialized module ... circular import".  Pin every configuration
+# to the package directory so the module is importable in place on Windows too.
+foreach(_cfg IN LISTS CMAKE_CONFIGURATION_TYPES)
+  string(TOUPPER "${_cfg}" _CFG)
+  set_target_properties(adgencov_core PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY_${_CFG} ${ADGENCOV_PY_PKG_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_${_CFG} ${ADGENCOV_PY_PKG_DIR})
+endforeach()
+
 message(STATUS "adgencov: Python module -> ${ADGENCOV_PY_PKG_DIR}/_core")

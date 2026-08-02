@@ -4,7 +4,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "adgencov/groups.hpp"
@@ -106,9 +109,44 @@ TEST_CASE("recommend_estimator reproduces the prototype ranking", "[pipeline]") 
   REQUIRE(results.front().spec.method == golden_pipeline::kBestMethod);
   REQUIRE_THAT(results.front().loo_nll, WithinRel(golden_pipeline::kBestLooNll, 1e-9));
 
-  // Full ranking (method order + scores) matches.
+  // Full ranking: every score matches the reference position-for-position.
   for (size_t i = 0; i < results.size(); ++i) {
-    REQUIRE(results[i].spec.method == golden_pipeline::kRankMethods[i]);
     REQUIRE_THAT(results[i].loo_nll, WithinRel(golden_pipeline::kRankLooNll[i], 1e-9));
+  }
+
+  // Method order is only asserted where the scores actually separate the
+  // candidates.  Several ad_target_ridge candidates tie to ~1e-13 — far inside
+  // the 1e-9 tolerance this suite works to — and std::stable_sort then orders
+  // them by whatever order the grid was scored in, which is not identical
+  // across compilers (MSVC vs gcc/clang differ in FMA and vectorisation).
+  // Requiring an exact permutation there tests the optimiser, not the numerics.
+  // So: partition both rankings into groups of tied scores and require the
+  // groups hold the same methods.
+  auto tied_groups = [](const std::vector<double>& scores) {
+    std::vector<std::pair<size_t, size_t>> groups;   // [begin, end)
+    size_t i = 0;
+    while (i < scores.size()) {
+      size_t j = i + 1;
+      while (j < scores.size() &&
+             std::abs(scores[j] - scores[i]) <=
+                 1e-9 * std::max(1.0, std::abs(scores[i]))) {
+        ++j;
+      }
+      groups.emplace_back(i, j);
+      i = j;
+    }
+    return groups;
+  };
+
+  for (const auto& [lo, hi] : tied_groups(golden_pipeline::kRankLooNll)) {
+    std::vector<std::string> got, want;
+    for (size_t i = lo; i < hi; ++i) {
+      got.push_back(results[i].spec.method);
+      want.push_back(golden_pipeline::kRankMethods[i]);
+    }
+    std::sort(got.begin(), got.end());
+    std::sort(want.begin(), want.end());
+    INFO("tied score group [" << lo << ", " << hi << ")");
+    REQUIRE(got == want);
   }
 }
