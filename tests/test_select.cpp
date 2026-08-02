@@ -12,6 +12,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+// M_PI is a POSIX extension, not ISO C++; MSVC and MinGW/UCRT only declare it
+// when _USE_MATH_DEFINES is set before <cmath>.
+#define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
 #include <string>
