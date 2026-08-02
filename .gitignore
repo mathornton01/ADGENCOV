@@ -35,6 +35,11 @@ docs/**/*.toc
 # Data artifacts
 *.tmp
 /data/*.local.*
+# Raw GEO downloads: fetched on demand by the reproduction scripts, not vendored.
+# The derived outputs under data/ ARE tracked -- they back the Data Availability
+# statement of the application note.
+GSE*_Matrix.txt
+GSE*_Matrix.txt.gz
 
 # Golden-value generation virtualenv
 .goldenv/
