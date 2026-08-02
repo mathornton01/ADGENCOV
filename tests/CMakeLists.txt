@@ -30,8 +30,13 @@ if(ADGENCOV_BUILD_PYTHON)
     COMMAND ${Python_EXECUTABLE} -m pytest -q
             ${CMAKE_CURRENT_SOURCE_DIR}/test_bindings.py)
   # The pure-Python package lives in python/; the compiled _core lands there.
+  # This suite needs the reference prototype (ad_covariance_app.py), which is
+  # not distributed with the repository, so it skips at module level where the
+  # prototype is absent — including on CI. pytest exits 5 when every test is
+  # skipped; SKIP_RETURN_CODE reports that as "Skipped" rather than a failure.
   set_tests_properties(python_bindings_parity PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
+    SKIP_RETURN_CODE 5
     DEPENDS adgencov_core)
 
   # GEO ingestion (Phase B) — parses a committed series-matrix fixture and runs
